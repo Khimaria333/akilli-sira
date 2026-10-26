@@ -138,7 +138,7 @@ public final class Notifier {
             rv.setTextViewText(R.id.w_now_title, "Bir şarkı aç");
             rv.setTextViewText(R.id.w_now_artist, "YouTube Music'te çalmaya başla");
             rv.setTextViewText(R.id.w_next_title, "—");
-            rv.setImageViewResource(R.id.w_cover, R.drawable.ic_launcher_foreground);
+            rv.setImageViewResource(R.id.w_cover, R.drawable.logo_mark);
         } else {
             rv.setTextViewText(R.id.w_now_title, e.nowTitle);
             rv.setTextViewText(R.id.w_now_artist, e.nowArtist);
@@ -148,7 +148,7 @@ public final class Notifier {
             Bitmap bmp = cover != null ? ImageLoader.cached(cover) : null;
             if (bmp != null) rv.setImageViewBitmap(R.id.w_cover, bmp);
             else {
-                rv.setImageViewResource(R.id.w_cover, R.drawable.ic_launcher_foreground);
+                rv.setImageViewResource(R.id.w_cover, R.drawable.logo_mark);
                 if (cover != null) ImageLoader.fetch(cover, x -> { lastWidgetSig = null; updateWidgets(e); });
             }
         }

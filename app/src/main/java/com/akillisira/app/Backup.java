@@ -21,7 +21,7 @@ public final class Backup {
 
     public static void write(Context c, Store store, Uri uri) throws Exception {
         JSONObject o = store.exportJson();
-        o.put("app", "Akıllı Sıra");
+        o.put("app", "Ahenk");
         o.put("version", 1);
         o.put("exportedAt", System.currentTimeMillis());
         SharedPreferences p = c.getSharedPreferences("ayarlar", Context.MODE_PRIVATE);
@@ -47,7 +47,7 @@ public final class Backup {
             text = bo.toString(StandardCharsets.UTF_8.name());
         }
         JSONObject o = new JSONObject(text);
-        if (!o.has("likes") && !o.has("plays")) throw new Exception("Bu bir Akıllı Sıra yedeği değil");
+        if (!o.has("likes") && !o.has("plays")) throw new Exception("Bu bir Ahenk yedeği değil");
         int[] r = store.importJson(o);
         JSONObject st = o.optJSONObject("settings");
         if (st != null) {

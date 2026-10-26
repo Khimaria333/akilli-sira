@@ -1655,7 +1655,7 @@ public final class Engine {
         notifyChanged();
     }
 
-    /** Seçilen şarkıyı hemen başlat; akıllı sıra ondan devam eder. */
+    /** Seçilen şarkıyı hemen başlat; Ahenk ondan devam eder. */
     public void startFrom(Track t) {
         queue.clear();
         queueVersion++;

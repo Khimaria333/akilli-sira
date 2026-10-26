@@ -64,7 +64,7 @@ public class SettingsPage extends Page {
                 + "dil kesin anlaşılır ve \"rakı masası\" gibi sahneler gerçek fasıl/arabesk listeleri getirir.\n\n"
                 + "Anahtar almak (ücretsiz, 2 dk):\n"
                 + "1) Aşağıdaki düğmeyle Last.fm sayfasını aç, hesabın yoksa ücretsiz kaydol\n"
-                + "2) Formda Application name: Akıllı Sıra yaz, diğer alanları boş bırakabilirsin\n"
+                + "2) Formda Application name: Ahenk yaz, diğer alanları boş bırakabilirsin\n"
                 + "3) Submit'e bas, çıkan \"API key\" satırını kopyala ve buraya yapıştır",
                 13, Ui.TEXT2, Ui.REGULAR);
         lfd.setPadding(0, Ui.dp(a, 6), 0, Ui.dp(a, 10));
@@ -143,7 +143,7 @@ public class SettingsPage extends Page {
         g.addView(fadeSeg.view, full());
         divider(g);
         swBack = switchRow(g, "Uygulamaya geri dön",
-                "Geçişte YouTube Music öne gelirse ve Akıllı Sıra açıksa, birkaç saniye sonra geri döner",
+                "Geçişte YouTube Music öne gelirse ve Ahenk açıksa, birkaç saniye sonra geri döner",
                 e.isReturnToApp(), (b, on) -> e.setReturnToApp(on));
         divider(g);
         g.addView(Ui.text(a, "Geçiş yöntemi", 15, Ui.TEXT, Ui.BOLD));
@@ -170,10 +170,10 @@ public class SettingsPage extends Page {
         nb.addView(notifPermBtn, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 8, 0, 0));
         divider(nb);
         nb.addView(Ui.text(a, "Ana ekran widget'ı", 15, Ui.TEXT, Ui.BOLD));
-        TextView wd = Ui.text(a, "Ana ekranda boş bir yere uzun bas → Widget'lar → Akıllı Sıra. "
+        TextView wd = Ui.text(a, "Ana ekranda boş bir yere uzun bas → Widget'lar → Ahenk. "
                 + "Çalanı ve sıradakini gösterir, ⏭ ve 👎 düğmeleri vardır.\n\n"
                 + "Kısayollar: uygulama simgesine uzun bas → Sakin, Enerjik, Yol modu, Favoriler.\n\n"
-                + "Hızlı ayarlar: bildirim panelini aşağı çek → kalem simgesi → \"Akıllı Sıra\" kutucuğunu ekle. "
+                + "Hızlı ayarlar: bildirim panelini aşağı çek → kalem simgesi → \"Ahenk\" kutucuğunu ekle. "
                 + "Dokununca otomatik geçiş açılıp kapanır.", 13, Ui.TEXT2, Ui.REGULAR);
         wd.setPadding(0, Ui.dp(a, 4), 0, 0);
         wd.setLineSpacing(0, 1.15f);
@@ -398,7 +398,7 @@ public class SettingsPage extends Page {
         // ---- Hakkında ----
         body.addView(Ui.section(a, "Hakkında"));
         LinearLayout h = Ui.card(a);
-        verText = Ui.text(a, "Akıllı Sıra " + a.versionName(), 15, Ui.TEXT, Ui.BOLD);
+        verText = Ui.text(a, "Ahenk " + a.versionName(), 15, Ui.TEXT, Ui.BOLD);
         h.addView(verText);
         TextView tour = Ui.secondaryButton(a, "Tanıtımı tekrar göster");
         tour.setOnClickListener(v -> a.replayIntro());

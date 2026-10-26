@@ -26,13 +26,14 @@
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:label="Akıllı Sıra"
+        android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:theme="@style/AppTheme.Launch"
             android:launchMode="singleTop"
             android:screenOrientation="portrait">
             <intent-filter>
@@ -78,7 +79,7 @@
             android:name=".AutoTileService"
             android:exported="true"
             android:icon="@drawable/ic_stat"
-            android:label="Akıllı Sıra"
+            android:label="@string/app_name"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
@@ -89,7 +90,7 @@
         <service
             android:name=".MusicListenerService"
             android:exported="true"
-            android:label="Akıllı Sıra"
+            android:label="@string/app_name"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
@@ -105,7 +106,7 @@
         <receiver
             android:name=".WidgetProvider"
             android:exported="true"
-            android:label="Akıllı Sıra">
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

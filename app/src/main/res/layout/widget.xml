@@ -29,7 +29,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:singleLine="true"
-            android:text="Akıllı Sıra"
+            android:text="Ahenk"
             android:textColor="#F4F4F8"
             android:textSize="15sp"
             android:textStyle="bold" />

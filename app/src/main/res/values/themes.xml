@@ -8,4 +8,11 @@
         <item name="android:colorPrimary">@color/bg</item>
         <item name="android:colorPrimaryDark">@color/bg</item>
     </style>
+
+    <!-- Açılış: uygulama yüklenirken logo görünür; MainActivity sonra AppTheme'e geçer -->
+    <style name="AppTheme.Launch">
+        <item name="android:windowBackground">@drawable/splash_window</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+    </style>
 </resources>

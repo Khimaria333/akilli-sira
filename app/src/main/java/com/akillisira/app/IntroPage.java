@@ -40,7 +40,13 @@ public class IntroPage extends Page {
         body.setGravity(Gravity.CENTER_HORIZONTAL);
 
         LinearLayout top = Ui.hbox(a);
-        top.addView(Ui.text(a, "Akıllı Sıra", 15, Ui.TEXT2, Ui.BOLD), Ui.lpw(1));
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        android.widget.ImageView mark = new android.widget.ImageView(a);
+        mark.setImageResource(R.drawable.logo_mark);
+        top.addView(mark, Ui.lp(Ui.dp(a, 30), Ui.dp(a, 30)));
+        TextView brand = Ui.text(a, "Ahenk", 17, Ui.TEXT, Ui.BLACK);
+        brand.setPadding(Ui.dp(a, 8), 0, 0, 0);
+        top.addView(brand, Ui.lpw(1));
         TextView skip = Ui.text(a, "Atla", 15, Ui.TEXT2, Ui.BOLD);
         skip.setPadding(Ui.dp(a, 12), Ui.dp(a, 8), Ui.dp(a, 4), Ui.dp(a, 8));
         skip.setOnClickListener(v -> a.finishIntro());

@@ -366,7 +366,7 @@ public class DiscoverPage extends Page {
         });
         sb.addView(clr);
         p.addView(sb, full());
-        TextView hint = Ui.text(a, "Bir şarkıya dokun: YouTube Music'te başlar, akıllı sıra oradan devam eder.",
+        TextView hint = Ui.text(a, "Bir şarkıya dokun: YouTube Music'te başlar, Ahenk oradan devam eder.",
                 12, Ui.TEXT3, Ui.REGULAR);
         hint.setPadding(Ui.dp(a, 4), Ui.dp(a, 8), 0, 0);
         p.addView(hint);
@@ -630,7 +630,7 @@ public class DiscoverPage extends Page {
             r.setOnClickListener(v -> start(t, list));
             results.addView(r, Ui.margins(full(), a, 0, 0, 0, 8));
         }
-        TextView note = Ui.text(a, "Listedeki şarkılar sırayla çalar; bitince akıllı sıra aynı havada devam eder. "
+        TextView note = Ui.text(a, "Listedeki şarkılar sırayla çalar; bitince Ahenk aynı havada devam eder. "
                 + "İstediğin şarkıya dokunarak oradan başlayabilirsin.", 12, Ui.TEXT3, Ui.REGULAR);
         note.setPadding(Ui.dp(a, 4), Ui.dp(a, 6), 0, 0);
         note.setLineSpacing(0, 1.12f);

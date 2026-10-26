@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="app_name">Ahenk</string>
     <string name="widget_desc">Çalan ve sıradaki şarkı, tek dokunuşla geç</string>
     <string name="sc_sakin">😌 Sakin</string>
     <string name="sc_sakin_long">😌 Sakin bir liste başlat</string>

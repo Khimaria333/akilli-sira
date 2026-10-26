@@ -27,7 +27,7 @@ public class AutoTileService extends TileService {
         Engine e = Engine.get(this);
         boolean on = e.isAuto();
         t.setState(on ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
-        t.setLabel("Akıllı Sıra");
+        t.setLabel("Ahenk");
         if (Build.VERSION.SDK_INT >= 29) {
             String sub;
             if (!on) sub = "Kapalı";

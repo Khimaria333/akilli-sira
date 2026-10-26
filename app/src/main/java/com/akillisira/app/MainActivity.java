@@ -42,6 +42,7 @@ public class MainActivity extends Activity implements Engine.Listener {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        setTheme(R.style.AppTheme);   // açılış temasından (logo) normal temaya geç
         super.onCreate(savedInstanceState);
         installCrashLog();
         WakeScheduler.schedule(this);   // alarm açıksa bir sonrakini garanti et
@@ -66,12 +67,19 @@ public class MainActivity extends Activity implements Engine.Listener {
         nav = buildNav();
         root.addView(nav, Ui.lp(Ui.MATCH, Ui.WRAP));
         setContentView(root);
+        if (savedInstanceState == null && isLauncherIntent(getIntent())) Splash.show(this);
 
         setupDone = getSharedPreferences("ayarlar", MODE_PRIVATE).getBoolean("setupDone", false);
         pendingIntent = getIntent();
     }
 
     private Intent pendingIntent;
+
+    /** Ana ekrandan açıldı mı (kısayol, bildirim, alarm değil): açılış animasyonu sadece o zaman. */
+    private static boolean isLauncherIntent(Intent i) {
+        return i != null && Intent.ACTION_MAIN.equals(i.getAction())
+                && (i.getCategories() == null || i.hasCategory(Intent.CATEGORY_LAUNCHER));
+    }
 
     @Override
     protected void onNewIntent(Intent intent) {

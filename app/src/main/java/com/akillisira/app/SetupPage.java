@@ -63,13 +63,12 @@ public class SetupPage extends Page {
     protected void build() {
         body.setPadding(Ui.dp(a, 20), Ui.dp(a, 36), Ui.dp(a, 20), Ui.dp(a, 32));
 
-        LinearLayout logo = Ui.vbox(a);
-        logo.setGravity(Gravity.CENTER);
-        logo.setBackground(Ui.gradient(a, Ui.ACCENT, Ui.ACCENT2, 22));
-        logo.addView(new Views.Icon(a, Views.Icon.NOW, 0xFFFFFFFF), Ui.lp(Ui.dp(a, 34), Ui.dp(a, 34)));
-        body.addView(logo, Ui.lp(Ui.dp(a, 64), Ui.dp(a, 64)));
+        android.widget.ImageView logo = new android.widget.ImageView(a);
+        logo.setImageResource(R.drawable.logo_mark);
+        logo.setContentDescription("Ahenk");
+        body.addView(logo, Ui.lp(Ui.dp(a, 76), Ui.dp(a, 76)));
 
-        TextView h = Ui.text(a, "Akıllı Sıra'ya\nhoş geldin", 30, Ui.TEXT, Ui.BLACK);
+        TextView h = Ui.text(a, "Ahenk'e\nhoş geldin", 30, Ui.TEXT, Ui.BLACK);
         h.setPadding(0, Ui.dp(a, 20), 0, Ui.dp(a, 8));
         h.setLineSpacing(0, 1.05f);
         body.addView(h);

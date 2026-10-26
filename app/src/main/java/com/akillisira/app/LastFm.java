@@ -320,7 +320,7 @@ public class LastFm {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(8000);
         c.setReadTimeout(8000);
-        c.setRequestProperty("User-Agent", "AkilliSira/1.0 (Android)");
+        c.setRequestProperty("User-Agent", "Ahenk/1.0 (Android)");
         try {
             int code = c.getResponseCode();
             InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();

@@ -354,7 +354,7 @@ public class Deezer {
         c.setConnectTimeout(8000);
         c.setReadTimeout(8000);
         c.setRequestProperty("Accept", "application/json");
-        c.setRequestProperty("User-Agent", "AkilliSira/0.1 (Android)");
+        c.setRequestProperty("User-Agent", "Ahenk/1.0 (Android)");
         try {
             int code = c.getResponseCode();
             InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();

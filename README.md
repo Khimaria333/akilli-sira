@@ -1,33 +1,31 @@
-# Akıllı Sıra
+<p align="center"><img src="docs/ahenk.png" width="128" alt="Ahenk"></p>
 
-YouTube Music'te bir şarkı açtığında, ona en uygun şarkıyı (BPM, enerji, benzer sanatçı) bulup
-şarkı bitince YT Music'e otomatik olarak o şarkıyı çaldıran kişisel Android uygulaması.
+# Ahenk
 
-## Nasıl çalışır
-1. **Dinler:** Bildirim erişimiyle YT Music'te çalan şarkıyı ve kaçıncı saniyede olduğunu okur.
-2. **Veri toplar:** Deezer'in ücretsiz API'sinden şarkının BPM'ini ve ses yüksekliğini (enerji) alır.
-   Aynı sanatçının radyosu, benzer sanatçılar ve sanatçının popüler şarkılarından ~36 aday toplar.
-3. **Puanlar:** BPM uyumu (yarı/çift tempo dahil) en fazla 40, enerji uyumu 25, benzerlik 18,
-   popülerlik 8 puan. Aynı sanatçı arka arkaya gelirse ve yakında çalınan şarkılar için ceza var.
-4. **Geçer:** Sıradaki şarkının YT Music bağlantısını önceden bulur, şarkının bitmesine ~1,5 saniye kala YT Music'te o bağlantıyı açar.
-   YT Music kendi şarkısına geçmişse bunu fark eder ve düzeltir.
+*Şarkıdan şarkıya, ahenkle.*
 
-"Hava" ayarı: Sakinleştir (biraz daha yavaş/sakin), Aynı kalsın, Hareketlendir (biraz daha hızlı/enerjik).
+YouTube Music'te çalan şarkıyı dinler; tarzına, dönemine, temposuna, enerjisine ve ruh haline en uygun
+sıradaki şarkıyı seçer ve şarkı bitince sesi yumuşakça kısıp ona geçer. Kişisel bir Android uygulaması.
 
-## APK nasıl elde edilir
-Bu klasör GitHub'a yüklendiğinde `.github/workflows/build.yml` APK'yı bulutta otomatik derler
-ve deponun **Releases** sayfasına `AkilliSira.apk` olarak koyar.
+## Neler yapar
+- **Akıllı geçiş:** Önce tarz (benzer sanatçılar, Last.fm etiketleri, tür), sonra dönem, tempo (yarı/çift tempo dahil) ve enerji.
+- **Keşfet:** Ruh halini cümleyle anlat ("sporda sert rap", "akşamüstü sahilde sakin bir şeyler"), ruh hali ya da tür seç, ya da ara.
+- **Öğrenir ama sen söyleyince:** ❤️ beğeniler tarz profilini oluşturur; 👎 ve "Kötü geçiş" bir daha gelmez. Hızlı geçmelerden bir şey çıkarmaz.
+- **Her yerden kontrol:** Kilit ekranı bildirimi, widget, hızlı ayarlar kutucuğu, kısayollar, uyku zamanlayıcı, araba modu, müzikle uyandıran alarm, otomatik ruh hali planı.
+- **Geçmiş ve paylaşım:** İstatistikler, haftalık paylaşım kartı, liste paylaşımı.
+- **Uygulama içi güncelleme:** Yeni sürüm çıkınca tek dokunuşla kurulur.
 
-## Telefona kurulum
-1. Releases sayfasından `AkilliSira.apk` dosyasını indir, aç, "bilinmeyen kaynaklara izin ver" de, kur.
-2. Uygulamayı aç → **Bildirim erişimini aç** → Akıllı Sıra'yı aç.
-   - Anahtar gri ise: uygulamada **Uygulama bilgisi** → sağ üst ⋮ → **Kısıtlanmış ayarlara izin ver** → tekrar dene.
-3. Uygulamadaki "Diğer uygulamaların üzerinde göster" iznini aç (arka planda geçiş için gerekli).
-4. YT Music'te bir şarkı aç. Uygulamada "Sıradaki" birkaç saniye içinde dolar.
+## Kurulum
+1. [Releases](../../releases/latest) sayfasından `Ahenk.apk` dosyasını indir, aç, "bilinmeyen kaynaklara izin ver" de, kur.
+2. Uygulamayı aç; kısa tanıtımdan sonra **Bildirim erişimi** ve **Diğer uygulamaların üzerinde göster** izinlerini ver.
+   - Bildirim erişimi anahtarı gri ise: **Uygulama bilgisi** → sağ üst ⋮ → **Kısıtlanmış ayarlara izin ver**.
+3. YouTube Music'te bir şarkı aç; Ahenk sıradakini birkaç saniye içinde hazırlar.
+4. İsteğe bağlı: Ayarlar'dan ücretsiz bir Last.fm API anahtarı bağla; tarz eşleşmesi çok daha isabetli olur.
+
+## Derleme
+`.github/workflows/build.yml` her gönderimde APK'yı bulutta derler; `main` dalındaki her sürüm Releases'e `Ahenk.apk` olarak eklenir.
 
 ## Bilinen sınırlar
-- YT Music'in resmi bir API'si yok. Geçiş, Android'in standart "aramayla çal" komutuyla yapılıyor;
-  YT Music bazen farklı bir sürüm (canlı, cover) açabilir.
-- BPM verisi Deezer'den geliyor; bazı şarkılarda boş ya da iki katı olabiliyor.
-- "Mood" şimdilik ses yüksekliği + benzer sanatçı üzerinden yaklaşık hesaplanıyor.
-- Arka planda çalma için YT Music Premium gerekir.
+- YouTube Music'in resmi bir API'si yok; geçiş, şarkının YouTube Music bağlantısını açarak yapılır.
+- BPM ve enerji verisi Deezer'den gelir; bazı şarkılarda eksik olabilir.
+- Arka planda çalma için YouTube Music Premium gerekir.

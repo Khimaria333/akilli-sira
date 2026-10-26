@@ -4,4 +4,9 @@
     <color name="surface">#15151D</color>
     <color name="accent">#FF4D6D</color>
     <color name="accent2">#7B5CFF</color>
+    <!-- Ahenk logosu -->
+    <color name="brand_pink">#FF2E63</color>
+    <color name="brand_violet">#8B3DFF</color>
+    <color name="brand_blue">#2F6BFF</color>
+    <color name="brand_cyan">#2BD9FF</color>
 </resources>

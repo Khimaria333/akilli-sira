@@ -81,7 +81,7 @@ public final class Updater {
             h.setConnectTimeout(8000);
             h.setReadTimeout(8000);
             h.setRequestProperty("Accept", "application/vnd.github+json");
-            h.setRequestProperty("User-Agent", "AkilliSira");
+            h.setRequestProperty("User-Agent", "Ahenk");
             if (h.getResponseCode() != 200) return null;
             InputStream in = h.getInputStream();
             ByteArrayOutputStream bo = new ByteArrayOutputStream();
@@ -137,11 +137,11 @@ public final class Updater {
         DownloadManager dm = a.getSystemService(DownloadManager.class);
         if (dm == null) return;
         DownloadManager.Request req = new DownloadManager.Request(Uri.parse(r.url))
-                .setTitle("Akıllı Sıra " + r.tag)
+                .setTitle("Ahenk " + r.tag)
                 .setDescription("Güncelleme indiriliyor")
                 .setMimeType("application/vnd.android.package-archive")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
-                .setDestinationInExternalFilesDir(a, Environment.DIRECTORY_DOWNLOADS, "AkilliSira-" + r.tag + ".apk");
+                .setDestinationInExternalFilesDir(a, Environment.DIRECTORY_DOWNLOADS, "Ahenk-" + r.tag + ".apk");
         downloadId = dm.enqueue(req);
         android.widget.Toast.makeText(a, "Güncelleme indiriliyor…", android.widget.Toast.LENGTH_SHORT).show();
         watch(a, dm, downloadId);

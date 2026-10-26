@@ -30,7 +30,31 @@ public final class ShareCard {
 
     private static final int W = 1080, H = 1920;
 
+    /** Kartlardaki marka işareti (Ahenk logosu). */
+    private static volatile Bitmap logo;
+
+    private static void loadLogo(Activity a) {
+        if (logo == null) {
+            try {
+                logo = android.graphics.BitmapFactory.decodeResource(a.getResources(), R.drawable.logo_mark);
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    /** Logo + marka yazısı; yazının başladığı x'i döndürmez, kendisi çizer. */
+    private static void brand(Canvas c, Paint t, String text, float x, float baseline) {
+        float tx = x;
+        Bitmap l = logo;
+        if (l != null) {
+            float s = 76;
+            c.drawBitmap(l, null, new android.graphics.RectF(x - 6, baseline - 52, x - 6 + s, baseline - 52 + s), null);
+            tx = x + s + 6;
+        }
+        c.drawText(text, tx, baseline, t);
+    }
+
     public static void shareWeek(Activity a, Store store) {
+        loadLogo(a);
         new Thread(() -> {
             try {
                 Bitmap bmp = render(store);
@@ -55,6 +79,7 @@ public final class ShareCard {
     // =====================================================================
 
     public static void shareList(Activity a, String label, List<Track> list) {
+        loadLogo(a);
         if (list == null || list.isEmpty()) return;
         new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle("Listeyi paylaş")
@@ -81,7 +106,7 @@ public final class ShareCard {
                     sb.append(YtMusic.watchUrl(id)).append("\n");
                 }
             }
-            sb.append("\nAkıllı Sıra ile hazırlandı ✨");
+            sb.append("\nAhenk ile hazırlandı ✨");
             a.runOnUiThread(() -> {
                 Intent i = new Intent(Intent.ACTION_SEND).setType("text/plain")
                         .putExtra(Intent.EXTRA_TEXT, sb.toString());
@@ -107,7 +132,7 @@ public final class ShareCard {
                 t.setTypeface(Ui.BOLD);
                 t.setTextSize(34);
                 t.setLetterSpacing(0.25f);
-                c.drawText("AKILLI SIRA · LİSTE", x, 170, t);
+                brand(c, t, "AHENK · LİSTE", x, 170);
                 t.setLetterSpacing(0);
                 t.setColor(0xFFFFFFFF);
                 t.setTypeface(Ui.BLACK);
@@ -150,7 +175,7 @@ public final class ShareCard {
                 f.setColor(0xFF6E6E82);
                 f.setTypeface(Ui.MEDIUM);
                 f.setTextSize(32);
-                String foot = list.size() > n ? "+" + (list.size() - n) + " şarkı daha · Akıllı Sıra ✨" : "Akıllı Sıra ile hazırlandı ✨";
+                String foot = list.size() > n ? "+" + (list.size() - n) + " şarkı daha · Ahenk ✨" : "Ahenk ile hazırlandı ✨";
                 c.drawText(foot, (W - f.measureText(foot)) / 2f, H - 80, f);
 
                 Uri uri = save(a.getContentResolver(), bmp);
@@ -214,7 +239,7 @@ public final class ShareCard {
         t.setTypeface(Ui.BOLD);
         t.setTextSize(34);
         t.setLetterSpacing(0.25f);
-        c.drawText("AKILLI SIRA", x, 190, t);
+        brand(c, t, "AHENK", x, 190);
 
         t.setLetterSpacing(0);
         t.setColor(0xFFFFFFFF);
@@ -280,7 +305,7 @@ public final class ShareCard {
         t.setTypeface(Ui.MEDIUM);
         t.setTextSize(34);
         t.setColor(0xFF6E6E82);
-        String foot = "Akıllı Sıra ile seçildi ✨";
+        String foot = "Ahenk ile seçildi ✨";
         c.drawText(foot, (W - t.measureText(foot)) / 2f, H - 90, t);
         return bmp;
     }
@@ -329,7 +354,7 @@ public final class ShareCard {
         ContentValues v = new ContentValues();
         v.put(MediaStore.Images.Media.DISPLAY_NAME, "akilli_sira_haftam_" + System.currentTimeMillis() + ".png");
         v.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
-        v.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/AkilliSira");
+        v.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Ahenk");
         Uri uri = r.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
         if (uri == null) throw new Exception("Galeriye kaydedilemedi");
         try (OutputStream out = r.openOutputStream(uri)) {
