@@ -11,7 +11,7 @@ import java.util.Locale;
  *  BPM uyumu     en fazla 40  (çalan şarkıya ve/veya ruh hali aralığına; yarı/çift tempo da sayılır)
  *  Enerji uyumu  en fazla 25  (ses yüksekliğine göre yaklaşık)
  *  Benzerlik     en fazla 23  (benzer sanatçı, radyo, ruh hali listesi, Keşfet listesi)
- *  Popülerlik    en fazla 8
+ *  Popülerlik    en fazla 5 (hep aynı hitler öne çıkmasın diye düşük)
  *  Çeşitlilik    Global modda dil dengesi +6
  *  Cezalar       aynı sanatçı arka arkaya, yakında çalınan sanatçı, çok kısa/uzun
  */
@@ -156,6 +156,6 @@ public final class Scorer {
     }
 
     static double popularity(Track c) {
-        return 8 * Math.min(1.0, c.rank / 800000.0);
+        return 5 * Math.min(1.0, c.rank / 800000.0);
     }
 }

@@ -64,6 +64,8 @@ public final class Engine {
     private final ExecutorService net = Executors.newCachedThreadPool();
     private final Deezer deezer = new Deezer();
     private final SharedPreferences prefs;
+    private final SharedPreferences pairs;   // şarkı → daha önce önerilenler (kalıcı)
+    private final java.util.Random rnd = new java.util.Random();
     private final AudioManager audio;
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
 
@@ -115,6 +117,7 @@ public final class Engine {
     private Engine(Context app) {
         this.app = app;
         prefs = app.getSharedPreferences("ayarlar", Context.MODE_PRIVATE);
+        pairs = app.getSharedPreferences("oneriler", Context.MODE_PRIVATE);
         audio = app.getSystemService(AudioManager.class);
     }
 
@@ -307,6 +310,7 @@ public final class Engine {
         List<Track> rest = new ArrayList<>();
         for (Track a : allRanked) if (a != t && rest.size() < 8) rest.add(a);
         alternatives = rest;
+        if (seed != null) rememberPair(seed.key(), t.key());
         log("Sıradaki: " + t);
         prefetchVideoId(t);
         notifyChanged();
@@ -526,6 +530,7 @@ public final class Engine {
                     } else {
                         pick = ranked.get(0);
                         alternatives = new ArrayList<>(ranked.subList(1, Math.min(9, ranked.size())));
+                        rememberPair(seedF.key(), pick.key());
                         log("Sıradaki: " + pick);
                         prefetchVideoId(pick);
                     }
@@ -549,11 +554,14 @@ public final class Engine {
                                    boolean turkish) {
         List<Track> pool = new ArrayList<>(planList);
         if (s.artistId > 0) {
-            pool.addAll(safe(() -> deezer.artistRadio(s.artistId, 25)));
-            for (Long rel : safe(() -> deezer.related(s.artistId, 6))) {
-                pool.addAll(safe(() -> deezer.artistTop(rel, 4, "related")));
+            pool.addAll(safe(() -> deezer.artistRadio(s.artistId, 30)));
+            // Her seferinde farklı 6 benzer sanatçı, her birinin ilk 12 şarkısından rastgele 4'ü
+            List<Long> rels = new ArrayList<>(safe(() -> deezer.related(s.artistId, 15)));
+            Collections.shuffle(rels, rnd);
+            for (Long rel : rels.subList(0, Math.min(6, rels.size()))) {
+                pool.addAll(sample(safe(() -> deezer.artistTop(rel, 12, "related")), 4));
             }
-            pool.addAll(safe(() -> deezer.artistTop(s.artistId, 5, "same")));
+            pool.addAll(sample(safe(() -> deezer.artistTop(s.artistId, 12, "same")), 3));
         }
         // Ruh hali ya da Türkçe mod için ek kaynak: çalma listeleri
         List<String> queries = new ArrayList<>();
@@ -562,22 +570,88 @@ public final class Engine {
         boolean seedForeign = turkish && s.lang == Lang.FOREIGN;
         int maxQ = seedForeign ? 3 : 2;
         for (int i = 0; i < queries.size() && i < maxQ; i++) {
-            pool.addAll(playlistPool(queries.get(i), turkish, 1, 40));
+            pool.addAll(sample(playlistPool(queries.get(i), turkish, 1, 80), 30));
         }
 
         List<Track> list = dedupe(pool, s.key(), hist);
         classifyLanguages(list);
         if (turkish) list = keepTurkish(list);
 
-        list.sort((a, b) -> Double.compare(Scorer.preScore(b), Scorer.preScore(a)));
-        if (list.size() > 40) list = new ArrayList<>(list.subList(0, 40));
+        list = preselect(list, 40);
         deezer.fillDetailsAll(list);
-        return Scorer.rank(ctx, list);
+        return applyVariety(Scorer.rank(ctx, list), s.key());
+    }
+
+    // =====================================================================
+    // Çeşitlilik: aynı şarkıya hep aynı öneri gelmesin
+    // =====================================================================
+
+    /** Ön eleme: kaynak + popülerlik + rastgele pay; hep aynı hitler öne çıkmasın. */
+    private List<Track> preselect(List<Track> list, int n) {
+        Map<Track, Double> w = new HashMap<>();
+        for (Track t : list) w.put(t, Scorer.preScore(t) + rnd.nextDouble() * 14);
+        List<Track> out = new ArrayList<>(list);
+        out.sort((a, b) -> Double.compare(w.get(b), w.get(a)));
+        return out.size() > n ? new ArrayList<>(out.subList(0, n)) : out;
+    }
+
+    /**
+     * 1) Bu şarkıdan sonra daha önce önerilenlere ceza (en yenisi en ağır)
+     * 2) Puanlara küçük rastgele pay
+     * 3) En iyiye yakın (10 puan içinde) en fazla 5 aday arasından ağırlıklı rastgele seçim
+     */
+    private List<Track> applyVariety(List<Track> ranked, String seedKey) {
+        if (ranked.isEmpty()) return ranked;
+        List<String> before = pairList(seedKey);
+        for (Track t : ranked) {
+            int idx = before.indexOf(t.key());
+            if (idx >= 0) t.score -= Math.max(8, 22 - idx * 3);
+            t.score += rnd.nextDouble() * 6 - 3;
+        }
+        List<Track> out = new ArrayList<>(ranked);
+        out.sort((a, b) -> Double.compare(b.score, a.score));
+
+        double top = out.get(0).score;
+        int window = 0;
+        while (window < out.size() && window < 5 && out.get(window).score >= top - 10) window++;
+        double sum = 0;
+        double[] wts = new double[window];
+        for (int i = 0; i < window; i++) { wts[i] = Math.exp((out.get(i).score - top) / 4.0); sum += wts[i]; }
+        double r = rnd.nextDouble() * sum;
+        int chosen = 0;
+        for (int i = 0; i < window; i++) { r -= wts[i]; if (r <= 0) { chosen = i; break; } }
+        if (chosen > 0) out.add(0, out.remove(chosen));
+        return out;
+    }
+
+    private List<String> pairList(String seedKey) {
+        String v = pairs.getString(seedKey, null);
+        List<String> out = new ArrayList<>();
+        if (v != null && !v.isEmpty()) Collections.addAll(out, v.split("\t"));
+        return out;
+    }
+
+    private void rememberPair(String seedKey, String nextKey) {
+        List<String> l = pairList(seedKey);
+        l.remove(nextKey);
+        l.add(0, nextKey);
+        while (l.size() > 8) l.remove(l.size() - 1);
+        SharedPreferences.Editor ed = pairs.edit();
+        if (pairs.getAll().size() > 600) ed.clear();   // sınırsız büyümesin
+        ed.putString(seedKey, String.join("\t", l)).apply();
+    }
+
+    private <T> List<T> sample(List<T> l, int n) {
+        List<T> c = new ArrayList<>(l);
+        Collections.shuffle(c, rnd);
+        return c.size() > n ? new ArrayList<>(c.subList(0, n)) : c;
     }
 
     private List<Track> playlistPool(String query, boolean turkish, int playlists, int perList) {
         List<Track> out = new ArrayList<>();
-        for (Long pid : safe(() -> deezer.searchPlaylists(query, playlists))) {
+        List<Long> found = new ArrayList<>(safe(() -> deezer.searchPlaylists(query, 5)));
+        Collections.shuffle(found, rnd);
+        for (Long pid : found.subList(0, Math.min(playlists, found.size()))) {
             for (Track t : safe(() -> deezer.playlistTracks(pid, perList, "mood"))) {
                 t.fromTurkishList = turkish;
                 out.add(t);
@@ -695,15 +769,15 @@ public final class Engine {
                 List<Track> list = dedupe(pool, "", hist);
                 classifyLanguages(list);
                 if (turkish) list = keepTurkish(list);
-                Collections.shuffle(list);   // her seferinde biraz farklı olsun
-                list.sort((a, b) -> Double.compare(Scorer.preScore(b), Scorer.preScore(a)));
-                if (list.size() > 45) list = new ArrayList<>(list.subList(0, 45));
+                list = preselect(list, 45);   // her seferinde biraz farklı olsun
                 deezer.fillDetailsAll(list);
 
                 Scorer.Ctx ctx = new Scorer.Ctx();
                 ctx.target = target;
                 ctx.strictArtist = false;
                 List<Track> ranked = Scorer.rank(ctx, list);
+                for (Track t : ranked) t.score += rnd.nextDouble() * 8 - 4;
+                ranked.sort((x, y) -> Double.compare(y.score, x.score));
                 // Aynı sanatçıdan en fazla 2 şarkı
                 List<Track> out = new ArrayList<>();
                 Map<String, Integer> perArtist = new HashMap<>();
