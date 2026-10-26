@@ -134,10 +134,10 @@ public class DiscoverPage extends Page {
             @Override public void afterTextChanged(Editable ed) { updatePreview(); }
         });
         String prev = e.getVibe();
-        if (prev != null) input.setText(prev);
         ask.addView(input, full());
 
         preview = Ui.text(a, "", 13, Ui.ACCENT, Ui.MEDIUM);
+        if (prev != null) input.setText(prev);
         preview.setPadding(Ui.dp(a, 4), Ui.dp(a, 10), 0, 0);
         preview.setLineSpacing(0, 1.15f);
         ask.addView(preview);
@@ -273,6 +273,7 @@ public class DiscoverPage extends Page {
     }
 
     private void updatePreview() {
+        if (input == null || preview == null) return;
         String t = input.getText().toString().trim();
         if (t.isEmpty()) {
             preview.setVisibility(View.GONE);

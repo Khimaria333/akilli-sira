@@ -42,7 +42,13 @@ public class MainActivity extends Activity implements Engine.Listener {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        installCrashLog();
         engine = Engine.get(this);
+        String crash = getSharedPreferences("ayarlar", MODE_PRIVATE).getString("lastCrash", null);
+        if (crash != null) {
+            engine.log("⚠️ Son çökme: " + crash);
+            getSharedPreferences("ayarlar", MODE_PRIVATE).edit().remove("lastCrash").apply();
+        }
         Window w = getWindow();
         w.setStatusBarColor(Ui.BG);
         w.setNavigationBarColor(Ui.SURFACE);
@@ -70,6 +76,37 @@ public class MainActivity extends Activity implements Engine.Listener {
         super.onNewIntent(intent);
         setIntent(intent);
         pendingIntent = intent;
+    }
+
+    private void installCrashLog() {
+        final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+        if (prev instanceof CrashSaver) return;
+        Thread.setDefaultUncaughtExceptionHandler(new CrashSaver(getApplicationContext(), prev));
+    }
+
+    /** Çökmenin nedenini kaydeder, sonra sistemin normal davranışına bırakır. */
+    private static final class CrashSaver implements Thread.UncaughtExceptionHandler {
+        private final android.content.Context ctx;
+        private final Thread.UncaughtExceptionHandler next;
+
+        CrashSaver(android.content.Context ctx, Thread.UncaughtExceptionHandler next) {
+            this.ctx = ctx;
+            this.next = next;
+        }
+
+        @Override
+        public void uncaughtException(Thread t, Throwable ex) {
+            try {
+                StringBuilder sb = new StringBuilder(ex.toString());
+                StackTraceElement[] st = ex.getStackTrace();
+                for (int i = 0; i < st.length && i < 6; i++) sb.append("\n   at ").append(st[i]);
+                Throwable cause = ex.getCause();
+                if (cause != null) sb.append("\n   neden: ").append(cause);
+                ctx.getSharedPreferences("ayarlar", MODE_PRIVATE).edit()
+                        .putString("lastCrash", sb.toString()).commit();
+            } catch (Throwable ignored) {}
+            if (next != null) next.uncaughtException(t, ex);
+        }
     }
 
     /** Simge kısayolları: akillisira://start/{sakin|enerjik|yol|favoriler} */
