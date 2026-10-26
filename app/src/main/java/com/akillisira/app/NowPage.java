@@ -23,6 +23,10 @@ public class NowPage extends Page {
     private Views.ProgressLine progress;
     private Views.Icon playIcon;
     private LinearLayout notifBanner;
+    private TextView likeBtn;
+    private int bgColor = Ui.BG;            // kapaktan gelen renk (koyulaştırılmış)
+    private android.animation.ValueAnimator bgAnim;
+    private String colorFor;
     private Views.Meter meter;
     private TextView sessionLabel, sleepChip, nightPill, carPill;
 
@@ -94,6 +98,15 @@ public class NowPage extends Page {
             e.dislikeNow();
             a.toast("Bir daha önerilmeyecek, geçiliyor");
         });
+        likeBtn = smallRound("🤍");
+        likeBtn.setOnClickListener(v -> {
+            boolean was = e.isNowLiked();
+            e.toggleLikeNow();
+            likeBtn.animate().scaleX(1.25f).scaleY(1.25f).setDuration(120)
+                    .withEndAction(() -> likeBtn.animate().scaleX(1f).scaleY(1f).setDuration(120).start()).start();
+            a.toast(was ? "Beğendiklerinden çıkarıldı" : "❤️ Beğendin, benzerleri daha sık gelecek");
+        });
+        nowRow.addView(likeBtn, Ui.margins(Ui.lp(Ui.dp(a, 34), Ui.dp(a, 34)), a, 0, 0, 8, 0));
         nowRow.addView(dislikeNow, Ui.lp(Ui.dp(a, 34), Ui.dp(a, 34)));
         ht.addView(nowRow, full());
         heroTitle = Ui.text(a, "", 19, Ui.TEXT, Ui.BOLD);
@@ -363,8 +376,38 @@ public class NowPage extends Page {
                 .show();
     }
 
+    /** Kapağın baskın rengini alıp arka planı ona doğru yumuşakça boya. */
+    private void updateColor(String url) {
+        if (url == null || url.equals(colorFor)) return;
+        colorFor = url;
+        ImageLoader.fetch(url, bmp -> {
+            if (!url.equals(colorFor)) return;
+            int vib = Palette.vibrant(bmp, Ui.ACCENT2);
+            animateBg(Palette.darken(vib, 0.42f));
+        });
+    }
+
+    private void animateBg(int to) {
+        if (bgAnim != null) bgAnim.cancel();
+        int from = bgColor;
+        bgAnim = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        bgAnim.setDuration(600);
+        bgAnim.addUpdateListener(an -> applyBg(Palette.mix(from, to, (float) an.getAnimatedValue())));
+        bgAnim.start();
+    }
+
+    private void applyBg(int c) {
+        bgColor = c;
+        android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{c, Palette.mix(c, Ui.BG, 0.65f), Ui.BG, Ui.BG});
+        scroll.setBackground(g);
+        if (a.isShowing(this)) a.setStatusBar(c);
+    }
+
     @Override
     public void onShow() {
+        a.setStatusBar(bgColor);
         modeSeg.select(e.getMode() + 1);
         langSeg.select(e.isTurkish() ? 0 : 1);
     }
@@ -407,7 +450,10 @@ public class NowPage extends Page {
         if (s != renderedSeed) {
             renderedSeed = s;
             ImageLoader.load(s != null ? s.coverUrl : null, heroCover);
+            updateColor(s != null ? s.coverUrl : null);
         }
+        String heart = e.isNowLiked() ? "❤️" : "🤍";
+        if (!heart.contentEquals(likeBtn.getText())) likeBtn.setText(heart);
         if (s != null && s.hasBpm()) {
             heroBpm.setText(Math.round(s.bpm) + " BPM");
             tempoValue.setText(Math.round(s.bpm) + " BPM");

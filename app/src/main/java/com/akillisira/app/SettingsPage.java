@@ -73,7 +73,10 @@ public class SettingsPage extends Page {
         divider(nb);
         nb.addView(Ui.text(a, "Ana ekran widget'ı", 15, Ui.TEXT, Ui.BOLD));
         TextView wd = Ui.text(a, "Ana ekranda boş bir yere uzun bas → Widget'lar → Akıllı Sıra. "
-                + "Çalanı ve sıradakini gösterir, ⏭ ve 👎 düğmeleri vardır.", 13, Ui.TEXT2, Ui.REGULAR);
+                + "Çalanı ve sıradakini gösterir, ⏭ ve 👎 düğmeleri vardır.\n\n"
+                + "Kısayollar: uygulama simgesine uzun bas → Sakin, Enerjik, Yol modu, Favoriler.\n\n"
+                + "Hızlı ayarlar: bildirim panelini aşağı çek → kalem simgesi → \"Akıllı Sıra\" kutucuğunu ekle. "
+                + "Dokununca otomatik geçiş açılıp kapanır.", 13, Ui.TEXT2, Ui.REGULAR);
         wd.setPadding(0, Ui.dp(a, 4), 0, 0);
         wd.setLineSpacing(0, 1.15f);
         nb.addView(wd);

@@ -31,7 +31,28 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Simge kısayolları: akillisira://start/sakin vb. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="akillisira" android:host="start" />
+            </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <!-- Hızlı ayarlar kutucuğu -->
+        <service
+            android:name=".AutoTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_stat"
+            android:label="Akıllı Sıra"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <!-- Çalan şarkıyı okumak için bildirim dinleyicisi -->
         <service

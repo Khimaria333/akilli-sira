@@ -21,7 +21,7 @@ public class HistoryPage extends Page {
 
     private LinearLayout content;
     private int renderedVersion = -1;
-    private boolean showAllDisliked;
+    private boolean showAllDisliked, showAllLiked;
 
     public HistoryPage(MainActivity a, Engine e) {
         super(a, e);
@@ -83,6 +83,15 @@ public class HistoryPage extends Page {
         r2.addView(stat("TÜRKÇE ORANI", known > 0 ? "%" + Math.round(100.0 * tr / known) : "—"), weightR());
         content.addView(r2, Ui.margins(full(), a, 0, 10, 0, 0));
 
+        if (week > 0) {
+            TextView share = Ui.primaryButton(a, "📤  Haftalık özetimi paylaş");
+            share.setOnClickListener(x -> {
+                a.toast("Görsel hazırlanıyor…");
+                ShareCard.shareWeek(a, e.store);
+            });
+            content.addView(share, Ui.margins(full(), a, 0, 14, 0, 0));
+        }
+
         if (plays.isEmpty()) {
             LinearLayout c = Ui.card(a);
             c.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -119,6 +128,51 @@ public class HistoryPage extends Page {
                 Map.Entry<String, Integer> en = top.get(i);
                 c.addView(barRow(en.getKey(), en.getValue() + " şarkı", en.getValue() / (float) max),
                         Ui.margins(full(), a, 0, i == 0 ? 0 : 12, 0, 0));
+            }
+            content.addView(c, full());
+        }
+
+        // ---- Beğenilenler ----
+        List<Store.Liked> liked = e.store.liked();
+        if (!liked.isEmpty()) {
+            content.addView(Ui.section(a, "Beğendiklerin · " + liked.size()));
+            LinearLayout c = Ui.card(a);
+            TextView info = Ui.text(a, "Bunlar ve bu sanatçılar daha sık önerilir. Keşfet'teki "
+                    + "\"Favorilerimden karışık\" ile hepsini bir arada dinleyebilirsin.", 12.5f, Ui.TEXT2, Ui.REGULAR);
+            info.setLineSpacing(0, 1.15f);
+            info.setPadding(0, 0, 0, Ui.dp(a, 8));
+            c.addView(info);
+            int limit = showAllLiked ? liked.size() : Math.min(5, liked.size());
+            for (int i = 0; i < limit; i++) {
+                Store.Liked l = liked.get(i);
+                LinearLayout row = Ui.hbox(a);
+                row.setPadding(0, Ui.dp(a, 8), 0, Ui.dp(a, 8));
+                ImageView cv = Ui.cover(a, 10);
+                row.addView(cv, Ui.margins(Ui.lp(Ui.dp(a, 40), Ui.dp(a, 40)), a, 0, 0, 12, 0));
+                ImageLoader.load(l.cover, cv);
+                LinearLayout t = Ui.vbox(a);
+                t.addView(Ui.oneLine(Ui.text(a, l.title, 14.5f, Ui.TEXT, Ui.BOLD)));
+                t.addView(Ui.oneLine(Ui.text(a, l.artist, 12.5f, Ui.TEXT2, Ui.REGULAR)));
+                row.addView(t, Ui.lpw(1));
+                TextView rm = Ui.text(a, "❤️", 16, Ui.TEXT, Ui.REGULAR);
+                rm.setPadding(Ui.dp(a, 12), Ui.dp(a, 6), Ui.dp(a, 4), Ui.dp(a, 6));
+                rm.setOnClickListener(x -> {
+                    e.unlike(l.key);
+                    a.toast("Beğendiklerinden çıkarıldı: " + l.title);
+                });
+                row.addView(rm);
+                c.addView(row, full());
+            }
+            if (liked.size() > 5) {
+                TextView more = Ui.text(a, showAllLiked ? "Daha az göster" : "Tümünü göster (" + liked.size() + ")",
+                        13, Ui.TEXT2, Ui.BOLD);
+                more.setPadding(0, Ui.dp(a, 8), 0, 0);
+                more.setOnClickListener(x -> {
+                    showAllLiked = !showAllLiked;
+                    renderedVersion = -1;
+                    render();
+                });
+                c.addView(more);
             }
             content.addView(c, full());
         }

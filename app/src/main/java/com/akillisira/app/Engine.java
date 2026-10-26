@@ -577,11 +577,21 @@ public final class Engine {
 
     /** Keşfet listesinden bir şarkıyı hemen başlatır; listenin geri kalanı sıraya öncelikli girer. */
     public void playNow(Track t, List<Track> fromList) {
+        playNow(t, fromList, false);
+    }
+
+    /** keepOrder: DJ listesi gibi sırası önemli listelerde seçilen şarkıdan sonrasını aynen çal. */
+    public void playNow(Track t, List<Track> fromList, boolean keepOrder) {
         List<Track> rest = new ArrayList<>(fromList);
-        rest.remove(t);
         plan = new ArrayList<>();
         queue.clear();
-        queue.addAll(Scorer.flowOrder(t, rest));   // tempo ve enerjiye göre akıcı sıra
+        if (keepOrder) {
+            int i = rest.indexOf(t);
+            queue.addAll(rest.subList(i + 1, rest.size()));
+        } else {
+            rest.remove(t);
+            queue.addAll(Scorer.flowOrder(t, rest));   // tempo ve enerjiye göre akıcı sıra
+        }
         queueVersion++;
         fire(t, true);
         refreshPick();
@@ -751,6 +761,8 @@ public final class Engine {
         final Scorer.Ctx ctx = new Scorer.Ctx();
         ctx.mode = effectiveMode();
         ctx.artistDislikes = store.dislikedArtists();
+        ctx.artistLikes = store.likedArtists();
+        ctx.likedKeys = store.likedKeys();
         ctx.target = sessionTarget();
         ctx.recentArtists = new ArrayList<>(recentArtists);
         final boolean turkish = isTurkish();
@@ -996,13 +1008,26 @@ public final class Engine {
     // Keşfet: ruh hali + mekan + dil → öneri listesi
     // =====================================================================
 
+    public boolean discoverDj;              // son liste DJ enerji eğrisiyle mi dizildi
+    public double[] discoverCurve;          // DJ listesinde her şarkının yoğunluğu (0..1)
+    private boolean autoStartDiscover;      // kısayoldan gelindiyse liste hazır olunca başlat
+
+    public boolean isDj() { return prefs.getBoolean("dj", false); }
+    public void setDj(boolean on) { prefs.edit().putBoolean("dj", on).apply(); notifyChanged(); }
+
     public void discover(String moodId, String placeId) {
         Moods.Mood m = Moods.mood(moodId);
         if (m == null) return;
         prefs.edit().remove("vibe").apply();
         setSession(moodId, placeId);
         final boolean turkish = isTurkish();
-        runDiscover(Moods.target(m, Moods.place(placeId), turkish), turkish);
+        runDiscover(Moods.target(m, Moods.place(placeId), turkish), turkish, null);
+    }
+
+    /** Kısayollardan: listeyi hazırla ve hemen başlat. */
+    public void discoverAndPlay(String moodId, String placeId) {
+        autoStartDiscover = true;
+        discover(moodId, placeId);
     }
 
     /** Serbest cümleden ("akşamüstü sahilde sakin bir şeyler") öneri listesi. */
@@ -1011,25 +1036,75 @@ public final class Engine {
         prefs.edit().putString("vibe", text).putString("mood", r.moodId).putString("place", r.placeId).apply();
         final boolean turkish = isTurkish();
         log("Anlaşılan: " + r.summary());
-        runDiscover(r.target(turkish), turkish);
+        runDiscover(r.target(turkish), turkish, null);
         return r;
     }
 
-    private void runDiscover(Moods.Target target, boolean turkish) {
-        final Set<String> hist = new HashSet<>(history);
+    /** ❤️ Beğendiklerin + sevdiğin sanatçılardan karışık liste. */
+    public void discoverFavorites() {
+        List<Store.Liked> liked = store.liked();
+        if (liked.isEmpty()) {
+            autoStartDiscover = false;
+            discoverLoading = false;
+            discoverResults = new ArrayList<>();
+            discoverCurve = null;
+            discoverProblem = "Henüz beğendiğin şarkı yok. Çalan şarkıdaki ❤️ düğmesine basarak başla.";
+            notifyChanged();
+            return;
+        }
+        prefs.edit().remove("vibe").remove("mood").remove("place").apply();
+        runDiscover(null, isTurkish(), liked);
+    }
+
+    public void favoritesAndPlay() {
+        autoStartDiscover = true;
+        discoverFavorites();
+    }
+
+    private void runDiscover(Moods.Target target, boolean turkish, List<Store.Liked> favorites) {
+        final Set<String> hist = new HashSet<>();
+        if (favorites == null) hist.addAll(history);
+        else {   // favorilerde sadece son 20 çalınanı dışla
+            int n = 0;
+            List<String> h = new ArrayList<>(history);
+            for (int i = h.size() - 1; i >= 0 && n < 20; i--, n++) hist.add(h.get(i));
+        }
         hist.addAll(store.dislikedKeys());
+        final boolean dj = isDj();
+        final Map<String, Integer> artistLikes = store.likedArtists();
+        final Set<String> likedKeys = store.likedKeys();
+        final Map<String, Integer> artistDislikes = store.dislikedArtists();
         final int gen = ++discoverGeneration;
         discoverLoading = true;
         discoverProblem = null;
         discoverResults = new ArrayList<>();
-        discoverLabel = target.label + "  ·  " + (turkish ? "Türkçe" : "Global");
+        discoverCurve = null;
+        discoverLabel = (favorites != null ? "❤️ Favorilerinden karışık" : target.label)
+                + "  ·  " + (turkish ? "Türkçe" : "Global") + (dj ? "  ·  🎚 DJ" : "");
         notifyChanged();
 
         discoverWorker.submit(() -> {
             try {
                 List<Track> pool = new ArrayList<>();
-                for (int i = 0; i < target.queries.size() && i < 3; i++) {
-                    pool.addAll(playlistPool(target.queries.get(i), turkish, 2, 40));
+                if (favorites != null) {
+                    List<Store.Liked> fav = sample(favorites, 30);
+                    for (Store.Liked l : fav) pool.add(l.toTrack());
+                    List<Long> artists = new ArrayList<>();
+                    for (Store.Liked l : favorites) if (l.artistId > 0 && !artists.contains(l.artistId)) artists.add(l.artistId);
+                    Collections.shuffle(artists, rnd);
+                    for (int i = 0; i < artists.size() && i < 6; i++) {
+                        long aid = artists.get(i);
+                        pool.addAll(sample(safe(() -> deezer.artistTop(aid, 10, "same")), 3));
+                        if (i < 3) {
+                            for (Long rel : sample(safe(() -> deezer.related(aid, 8)), 2)) {
+                                pool.addAll(sample(safe(() -> deezer.artistTop(rel, 8, "related")), 2));
+                            }
+                        }
+                    }
+                } else {
+                    for (int i = 0; i < target.queries.size() && i < 3; i++) {
+                        pool.addAll(playlistPool(target.queries.get(i), turkish, 2, 40));
+                    }
                 }
                 if (pool.isEmpty()) throw new Exception("Deezer'den liste alınamadı");
                 List<Track> list = dedupe(pool, "", hist);
@@ -1041,26 +1116,54 @@ public final class Engine {
                 Scorer.Ctx ctx = new Scorer.Ctx();
                 ctx.target = target;
                 ctx.strictArtist = false;
+                ctx.likedKeys = likedKeys;
+                ctx.artistLikes = artistLikes;
+                ctx.artistDislikes = artistDislikes;
+                if (dj && target != null) {   // DJ'de iniş-çıkış için aralığı genişlet
+                    target.bpmLo *= 0.85;
+                    target.bpmHi *= 1.15;
+                }
                 List<Track> ranked = Scorer.rank(ctx, list);
                 for (Track t : ranked) t.score += rnd.nextDouble() * 8 - 4;
                 ranked.sort((x, y) -> Double.compare(y.score, x.score));
-                // Aynı sanatçıdan en fazla 2 şarkı
-                List<Track> out = new ArrayList<>();
-                Map<String, Integer> perArtist = new HashMap<>();
-                for (Track t : ranked) {
-                    String a = Text.norm(Text.mainArtist(t.artist));
-                    int n = perArtist.getOrDefault(a, 0);
-                    if (n >= 2) continue;
-                    perArtist.put(a, n + 1);
-                    out.add(t);
-                    if (out.size() >= 20) break;
+
+                List<Track> out;
+                double[] curve = null;
+                if (dj) {
+                    curve = new double[16];
+                    out = Scorer.djOrder(ranked, 16, curve);
+                    if (out.size() < curve.length) curve = java.util.Arrays.copyOf(curve, out.size());
+                } else {
+                    int perMax = favorites != null ? 3 : 2;
+                    out = new ArrayList<>();
+                    Map<String, Integer> perArtist = new HashMap<>();
+                    for (Track t : ranked) {
+                        String a = Text.norm(Text.mainArtist(t.artist));
+                        int n = perArtist.getOrDefault(a, 0);
+                        if (n >= perMax) continue;
+                        perArtist.put(a, n + 1);
+                        out.add(t);
+                        if (out.size() >= 20) break;
+                    }
                 }
+                final List<Track> outF = out;
+                final double[] curveF = curve;
                 main.post(() -> {
                     if (gen != discoverGeneration) return;
                     discoverLoading = false;
-                    discoverResults = out;
-                    if (out.isEmpty()) discoverProblem = "Bu seçimle şarkı bulunamadı, başka bir mekan dene.";
-                    else prefetchVideoId(out.get(0));
+                    discoverResults = outF;
+                    discoverDj = dj;
+                    discoverCurve = curveF;
+                    if (outF.isEmpty()) {
+                        discoverProblem = "Bu seçimle şarkı bulunamadı, başka bir şey dene.";
+                        autoStartDiscover = false;
+                    } else {
+                        prefetchVideoId(outF.get(0));
+                        if (autoStartDiscover) {
+                            autoStartDiscover = false;
+                            playNow(outF.get(0), outF, dj);
+                        }
+                    }
                     notifyChanged();
                 });
             } catch (Exception e) {
@@ -1068,11 +1171,101 @@ public final class Engine {
                 main.post(() -> {
                     if (gen != discoverGeneration) return;
                     discoverLoading = false;
+                    autoStartDiscover = false;
                     discoverProblem = "Öneriler alınamadı: " + msg;
                     notifyChanged();
                 });
             }
         });
+    }
+
+    // =====================================================================
+    // Arama: şarkı ya da sanatçıdan başlat
+    // =====================================================================
+
+    public boolean searchLoading;
+    public List<Track> searchResults = new ArrayList<>();
+    public String searchProblem;
+    private int searchGeneration;
+
+    public void search(String query) {
+        final String q = query.trim();
+        final int gen = ++searchGeneration;
+        if (q.length() < 2) {
+            searchLoading = false;
+            searchResults = new ArrayList<>();
+            searchProblem = null;
+            notifyChanged();
+            return;
+        }
+        searchLoading = true;
+        searchProblem = null;
+        notifyChanged();
+        net.submit(() -> {
+            List<Track> r;
+            String err = null;
+            try {
+                r = deezer.search(q, 15);
+            } catch (Exception e) {
+                r = new ArrayList<>();
+                err = "Arama yapılamadı: " + e.getMessage();
+            }
+            final List<Track> rf = r;
+            final String ef = err;
+            main.post(() -> {
+                if (gen != searchGeneration) return;
+                searchLoading = false;
+                searchResults = rf;
+                searchProblem = ef != null ? ef : rf.isEmpty() ? "Sonuç bulunamadı" : null;
+                notifyChanged();
+            });
+        });
+    }
+
+    public void clearSearch() {
+        ++searchGeneration;
+        searchLoading = false;
+        searchResults = new ArrayList<>();
+        searchProblem = null;
+        notifyChanged();
+    }
+
+    /** Seçilen şarkıyı hemen başlat; akıllı sıra ondan devam eder. */
+    public void startFrom(Track t) {
+        queue.clear();
+        queueVersion++;
+        plan = new ArrayList<>();
+        log("Başlatılıyor: " + t);
+        fire(t, true);
+        refreshPick();
+        notifyChanged();
+    }
+
+    // =====================================================================
+    // ❤️ Beğendim
+    // =====================================================================
+
+    public boolean isNowLiked() {
+        return nowKey != null && store.isLiked(nowKey);
+    }
+
+    public void toggleLikeNow() {
+        if (nowKey == null) return;
+        if (store.isLiked(nowKey)) {
+            store.unlike(nowKey);
+            log("❤️ kaldırıldı: " + nowTitle);
+        } else {
+            Track s = seed;
+            store.like(nowKey, nowArtist, nowTitle, s != null ? s.deezerId : 0, s != null ? s.artistId : 0,
+                    s != null ? s.coverUrl : null);
+            log("❤️ " + nowArtist + " – " + nowTitle);
+        }
+        notifyChanged();
+    }
+
+    public void unlike(String key) {
+        store.unlike(key);
+        notifyChanged();
     }
 
     // =====================================================================

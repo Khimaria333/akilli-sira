@@ -60,6 +60,34 @@ public class MainActivity extends Activity implements Engine.Listener {
         setContentView(root);
 
         setupDone = getSharedPreferences("ayarlar", MODE_PRIVATE).getBoolean("setupDone", false);
+        pendingIntent = getIntent();
+    }
+
+    private Intent pendingIntent;
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        pendingIntent = intent;
+    }
+
+    /** Simge kısayolları: akillisira://start/{sakin|enerjik|yol|favoriler} */
+    private void handleShortcut() {
+        Intent i = pendingIntent;
+        pendingIntent = null;
+        if (i == null || i.getData() == null || !"akillisira".equals(i.getData().getScheme())) return;
+        String what = i.getData().getLastPathSegment();
+        if (what == null) return;
+        switch (what) {
+            case "sakin": engine.discoverAndPlay("sakin", null); break;
+            case "enerjik": engine.discoverAndPlay("enerjik", null); break;
+            case "yol": engine.discoverAndPlay("mutlu", "araba"); break;
+            case "favoriler": engine.favoritesAndPlay(); break;
+            default: return;
+        }
+        toast("Liste hazırlanıyor, birazdan başlıyor…");
+        showTab(TAB_DISCOVER);
     }
 
     @Override
@@ -70,6 +98,7 @@ public class MainActivity extends Activity implements Engine.Listener {
         boolean ready = hasNotificationAccess() && canOverlay();
         if (!ready || !setupDone) {
             showSetup();
+            pendingIntent = null;
         } else if (currentTab < 0) {
             showTab(engine.nowTitle != null ? TAB_NOW : TAB_DISCOVER);
             askNotificationsOnce();
@@ -77,6 +106,7 @@ public class MainActivity extends Activity implements Engine.Listener {
             current.onShow();
             current.render();
         }
+        if (ready && setupDone) handleShortcut();
     }
 
     @Override
@@ -137,7 +167,16 @@ public class MainActivity extends Activity implements Engine.Listener {
         }
     }
 
+    public boolean isShowing(Page p) {
+        return current == p;
+    }
+
+    public void setStatusBar(int color) {
+        getWindow().setStatusBarColor(color);
+    }
+
     private void swap(Page p) {
+        getWindow().setStatusBarColor(Ui.BG);
         View v = p.view();
         if (current != p) {
             container.removeAllViews();

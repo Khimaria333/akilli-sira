@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="sakin"
+        android:shortcutLongLabel="@string/sc_sakin_long"
+        android:shortcutShortLabel="@string/sc_sakin">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="akillisira://start/sakin"
+            android:targetClass="com.akillisira.app.MainActivity"
+            android:targetPackage="com.akillisira.app" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="enerjik"
+        android:shortcutLongLabel="@string/sc_enerjik_long"
+        android:shortcutShortLabel="@string/sc_enerjik">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="akillisira://start/enerjik"
+            android:targetClass="com.akillisira.app.MainActivity"
+            android:targetPackage="com.akillisira.app" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="yol"
+        android:shortcutLongLabel="@string/sc_yol_long"
+        android:shortcutShortLabel="@string/sc_yol">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="akillisira://start/yol"
+            android:targetClass="com.akillisira.app.MainActivity"
+            android:targetPackage="com.akillisira.app" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="favoriler"
+        android:shortcutLongLabel="@string/sc_fav_long"
+        android:shortcutShortLabel="@string/sc_fav">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="akillisira://start/favoriler"
+            android:targetClass="com.akillisira.app.MainActivity"
+            android:targetPackage="com.akillisira.app" />
+    </shortcut>
+</shortcuts>

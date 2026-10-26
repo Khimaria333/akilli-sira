@@ -30,6 +30,14 @@ public class DiscoverPage extends Page {
     private List<Track> renderedResults;
     private boolean renderedLoading;
     private String renderedProblem;
+    private EditText searchBox;
+    private LinearLayout searchList;
+    private List<Track> renderedSearch;
+    private boolean renderedSearchLoading;
+    private String renderedSearchProblem;
+    private final android.os.Handler debounce = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable pendingSearch;
+    private android.widget.Switch djSwitch;
     private EditText input;
     private TextView preview;
 
@@ -47,6 +55,59 @@ public class DiscoverPage extends Page {
         h.setLineSpacing(0, 1.05f);
         h.setPadding(0, Ui.dp(a, 4), 0, 0);
         body.addView(h);
+
+        // ---- Şarkı ya da sanatçıdan başlat ----
+        LinearLayout sb = Ui.hbox(a);
+        sb.setBackground(Ui.stroke(a, Ui.SURFACE, Ui.STROKE, 20, 1));
+        sb.setPadding(Ui.dp(a, 14), 0, Ui.dp(a, 6), 0);
+        sb.addView(Ui.text(a, "🔎", 16, Ui.TEXT, Ui.REGULAR));
+        searchBox = new EditText(a);
+        searchBox.setBackground(null);
+        searchBox.setHint("Şarkı ya da sanatçıdan başlat");
+        searchBox.setHintTextColor(Ui.TEXT3);
+        searchBox.setTextColor(Ui.TEXT);
+        searchBox.setTextSize(15);
+        searchBox.setSingleLine(true);
+        searchBox.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        searchBox.setPadding(Ui.dp(a, 10), Ui.dp(a, 14), Ui.dp(a, 6), Ui.dp(a, 14));
+        searchBox.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence c, int st, int co, int af) {}
+            @Override public void onTextChanged(CharSequence c, int st, int b, int co) {}
+            @Override public void afterTextChanged(Editable ed) {
+                if (pendingSearch != null) debounce.removeCallbacks(pendingSearch);
+                String q = ed.toString();
+                pendingSearch = () -> e.search(q);
+                debounce.postDelayed(pendingSearch, 450);
+            }
+        });
+        searchBox.setOnEditorActionListener((v, id, ev) -> {
+            if (id == EditorInfo.IME_ACTION_SEARCH) {
+                hideKeyboard(searchBox);
+                e.search(searchBox.getText().toString());
+                return true;
+            }
+            return false;
+        });
+        sb.addView(searchBox, Ui.lpw(1));
+        TextView clr = Ui.text(a, "✕", 15, Ui.TEXT3, Ui.BOLD);
+        clr.setPadding(Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10));
+        clr.setOnClickListener(v -> {
+            searchBox.setText("");
+            e.clearSearch();
+            hideKeyboard(searchBox);
+        });
+        sb.addView(clr);
+        body.addView(sb, Ui.margins(full(), a, 0, 18, 0, 0));
+        searchList = Ui.vbox(a);
+        body.addView(searchList, full());
+
+        // ---- Hızlı başlat: favoriler ----
+        TextView fav = Ui.secondaryButton(a, "❤️  Favorilerimden karışık başlat");
+        fav.setOnClickListener(v -> {
+            e.discoverFavorites();
+            scroll.postDelayed(() -> scroll.smoothScrollTo(0, results.getTop() - Ui.dp(a, 12)), 150);
+        });
+        body.addView(fav, Ui.margins(full(), a, 0, 12, 0, 0));
 
         // ---- Kendi cümlenle anlat ----
         body.addView(Ui.section(a, "Kendi cümlenle anlat"));
@@ -173,7 +234,27 @@ public class DiscoverPage extends Page {
         langHint.setPadding(Ui.dp(a, 4), Ui.dp(a, 8), 0, 0);
         body.addView(langHint);
 
-        body.addView(Ui.space(a, 22));
+        // ---- DJ modu ----
+        LinearLayout dj = Ui.hbox(a);
+        dj.setBackground(Ui.stroke(a, Ui.SURFACE, Ui.STROKE, 18, 1));
+        dj.setPadding(Ui.dp(a, 16), Ui.dp(a, 12), Ui.dp(a, 10), Ui.dp(a, 12));
+        LinearLayout djT = Ui.vbox(a);
+        djT.addView(Ui.text(a, "🎚  DJ modu", 15, Ui.TEXT, Ui.BOLD));
+        TextView djD = Ui.text(a, "Liste sakin başlar, zirveye çıkar, yavaşça iner. Parti ve spor için ideal.",
+                12.5f, Ui.TEXT2, Ui.REGULAR);
+        djD.setPadding(0, Ui.dp(a, 3), Ui.dp(a, 8), 0);
+        djT.addView(djD);
+        dj.addView(djT, Ui.lpw(1));
+        djSwitch = new android.widget.Switch(a);
+        int[][] st = {{android.R.attr.state_checked}, {}};
+        djSwitch.setThumbTintList(new ColorStateList(st, new int[]{0xFFFFFFFF, 0xFFBDBDC8}));
+        djSwitch.setTrackTintList(new ColorStateList(st, new int[]{Ui.ACCENT, 0x44FFFFFF}));
+        djSwitch.setChecked(e.isDj());
+        djSwitch.setOnCheckedChangeListener((b, on) -> e.setDj(on));
+        dj.addView(djSwitch);
+        body.addView(dj, Ui.margins(full(), a, 0, 22, 0, 0));
+
+        body.addView(Ui.space(a, 16));
         goBtn = Ui.primaryButton(a, "✨  Şarkılarımı hazırla");
         goBtn.setOnClickListener(v -> {
             if (moodId == null) return;
@@ -220,6 +301,48 @@ public class DiscoverPage extends Page {
         scroll.postDelayed(() -> scroll.smoothScrollTo(0, results.getTop() - Ui.dp(a, 12)), 150);
     }
 
+    private void hideKeyboard(View v) {
+        InputMethodManager imm = a.getSystemService(InputMethodManager.class);
+        if (imm != null) imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
+    }
+
+    private void renderSearch() {
+        if (renderedSearch == e.searchResults && renderedSearchLoading == e.searchLoading
+                && eq(renderedSearchProblem, e.searchProblem)) return;
+        renderedSearch = e.searchResults;
+        renderedSearchLoading = e.searchLoading;
+        renderedSearchProblem = e.searchProblem;
+        searchList.removeAllViews();
+        if (e.searchLoading) {
+            TextView t = Ui.text(a, "Aranıyor…", 13, Ui.TEXT2, Ui.MEDIUM);
+            t.setPadding(Ui.dp(a, 6), Ui.dp(a, 10), 0, 0);
+            searchList.addView(t);
+            return;
+        }
+        if (e.searchProblem != null) {
+            TextView t = Ui.text(a, e.searchProblem, 13, Ui.TEXT2, Ui.MEDIUM);
+            t.setPadding(Ui.dp(a, 6), Ui.dp(a, 10), 0, 0);
+            searchList.addView(t);
+            return;
+        }
+        int n = 0;
+        for (Track t : e.searchResults) {
+            LinearLayout r = Ui.songRow(a, t, "▶  Buradan başlat", 0);
+            r.setOnClickListener(v -> {
+                if (!a.canOverlay() || !a.hasNotificationAccess()) {
+                    a.toast("Önce kurulumdaki izinleri tamamla");
+                    return;
+                }
+                hideKeyboard(searchBox);
+                e.startFrom(t);
+                a.toast("YouTube Music'te açılıyor: " + t.title);
+                a.showTab(MainActivity.TAB_NOW);
+            });
+            searchList.addView(r, Ui.margins(full(), a, 0, n == 0 ? 10 : 0, 0, 8));
+            if (++n >= 8) break;
+        }
+    }
+
     /** Mikrofondan gelen cümle. */
     public void onSpeech(String text) {
         input.setText(text);
@@ -257,10 +380,12 @@ public class DiscoverPage extends Page {
         greeting.setText(h >= 5 && h < 12 ? "Günaydın ☀️" : h < 18 && h >= 12 ? "İyi günler 👋"
                 : h >= 18 && h < 23 ? "İyi akşamlar 🌆" : "İyi geceler 🌙");
         langSeg.select(e.isTurkish() ? 0 : 1);
+        if (djSwitch != null) djSwitch.setChecked(e.isDj());
     }
 
     @Override
     public void render() {
+        renderSearch();
         if (renderedResults == e.discoverResults && renderedLoading == e.discoverLoading
                 && eq(renderedProblem, e.discoverProblem)) return;
         renderedResults = e.discoverResults;
@@ -295,6 +420,16 @@ public class DiscoverPage extends Page {
         if (list.isEmpty()) return;
 
         results.addView(Ui.section(a, "Senin için hazır · " + list.size() + " şarkı"));
+        if (e.discoverDj && e.discoverCurve != null && e.discoverCurve.length > 2) {
+            LinearLayout cc = Ui.card(a);
+            TextView ct = Ui.text(a, "🎚  Enerji eğrisi: ısınma → zirve → iniş", 13, Ui.TEXT2, Ui.MEDIUM);
+            ct.setPadding(0, 0, 0, Ui.dp(a, 8));
+            cc.addView(ct);
+            Views.Curve curve = new Views.Curve(a);
+            curve.setValues(e.discoverCurve);
+            cc.addView(curve, Ui.lp(Ui.MATCH, Ui.dp(a, 90)));
+            results.addView(cc, Ui.margins(full(), a, 0, 0, 0, 12));
+        }
         TextView lbl = Ui.text(a, e.discoverLabel, 14, Ui.TEXT2, Ui.MEDIUM);
         lbl.setPadding(Ui.dp(a, 4), 0, 0, Ui.dp(a, 12));
         results.addView(lbl);
@@ -320,7 +455,7 @@ public class DiscoverPage extends Page {
             a.toast("Önce kurulumdaki izinleri tamamla");
             return;
         }
-        e.playNow(t, list);
+        e.playNow(t, list, e.discoverDj);
         a.toast("YouTube Music'te açılıyor: " + t.title);
         a.showTab(MainActivity.TAB_NOW);
     }

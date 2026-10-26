@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="widget_desc">Çalan ve sıradaki şarkı, tek dokunuşla geç</string>
+    <string name="sc_sakin">😌 Sakin</string>
+    <string name="sc_sakin_long">😌 Sakin bir liste başlat</string>
+    <string name="sc_enerjik">⚡ Enerjik</string>
+    <string name="sc_enerjik_long">⚡ Enerjik bir liste başlat</string>
+    <string name="sc_yol">🚗 Yol modu</string>
+    <string name="sc_yol_long">🚗 Yol şarkılarını başlat</string>
+    <string name="sc_fav">❤️ Favoriler</string>
+    <string name="sc_fav_long">❤️ Favorilerimden karışık</string>
 </resources>

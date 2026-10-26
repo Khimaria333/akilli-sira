@@ -26,6 +26,8 @@ public final class Scorer {
         public int preferLang = Lang.UNKNOWN; // Global modda dengelemek için tercih edilen dil
         public boolean strictArtist = true;   // aynı sanatçıyı arka arkaya hiç koyma
         public java.util.Map<String, Integer> artistDislikes; // sanatçı → beğenilmeyen şarkı sayısı
+        public java.util.Map<String, Integer> artistLikes;    // sanatçı → beğenilen şarkı sayısı
+        public java.util.Set<String> likedKeys;               // beğenilen şarkılar
     }
 
     public static double preScore(Track c) {
@@ -106,6 +108,16 @@ public final class Scorer {
             if (seed != null && a.equals(seedArtist)) s -= 25;
             else if (x.recentArtists != null && x.recentArtists.contains(a)) s -= 12;
             if (c.durationSec > 0 && (c.durationSec < 90 || c.durationSec > 480)) s -= 15;
+            if (x.likedKeys != null && x.likedKeys.contains(c.key())) {
+                s += 12;
+                why.add("❤️ beğendiğin");
+            } else if (x.artistLikes != null) {
+                Integer n = x.artistLikes.get(a);
+                if (n != null && n > 0) {
+                    s += Math.min(15, 6 * n);
+                    why.add("❤️ sevdiğin sanatçı");
+                }
+            }
             if (x.artistDislikes != null) {
                 Integer n = x.artistDislikes.get(a);
                 if (n != null && n > 0) s -= Math.min(30, 12 * n);
@@ -116,6 +128,60 @@ public final class Scorer {
             out.add(c);
         }
         out.sort((p, q) -> Double.compare(q.score, p.score));
+        return out;
+    }
+
+    /** Yoğunluk 0..1: tempo + enerji. */
+    public static double intensity(Track t) {
+        double b = t.hasBpm() ? Math.max(0, Math.min(1, (t.bpm - 65) / 100.0)) : -1;
+        double e = t.energy();
+        if (b < 0 && e < 0) return 0.5;
+        if (b < 0) return e;
+        if (e < 0) return b;
+        return 0.55 * b + 0.45 * e;
+    }
+
+    /**
+     * DJ seti gibi sıralar: ısınma → zirve → yavaş iniş.
+     * Sıralanmış adaylardan en iyi 40'ını alır, her pozisyon için hedef yoğunluğa en yakın olanı seçer.
+     * curveOut: seçilen şarkıların yoğunlukları (grafik için).
+     */
+    public static List<Track> djOrder(List<Track> ranked, int n, double[] curveOut) {
+        List<Track> cand = new ArrayList<>();
+        java.util.Map<String, Integer> perArtist = new java.util.HashMap<>();
+        for (Track t : ranked) {
+            String a = Text.norm(Text.mainArtist(t.artist));
+            int k = perArtist.getOrDefault(a, 0);
+            if (k >= 2) continue;
+            perArtist.put(a, k + 1);
+            cand.add(t);
+            if (cand.size() >= 40) break;
+        }
+        if (cand.isEmpty()) return cand;
+        double lo = 1, hi = 0;
+        for (Track t : cand) { double v = intensity(t); lo = Math.min(lo, v); hi = Math.max(hi, v); }
+        if (hi - lo < 0.15) { lo = Math.max(0, lo - 0.1); hi = Math.min(1, hi + 0.1); }
+
+        List<Track> out = new ArrayList<>();
+        int count = Math.min(n, cand.size());
+        String prevArtist = "";
+        for (int i = 0; i < count; i++) {
+            double x = count == 1 ? 0.5 : i / (double) (count - 1);
+            double d = x < 0.6 ? 0.3 + 0.7 * (x / 0.6) : 1.0 - 0.65 * ((x - 0.6) / 0.4);
+            double want = lo + d * (hi - lo);
+            Track best = null;
+            double bestCost = Double.MAX_VALUE;
+            for (int j = 0; j < cand.size(); j++) {
+                Track t = cand.get(j);
+                double cost = Math.abs(intensity(t) - want) + 0.12 * j / cand.size();
+                if (Text.norm(Text.mainArtist(t.artist)).equals(prevArtist)) cost += 0.3;
+                if (cost < bestCost) { bestCost = cost; best = t; }
+            }
+            out.add(best);
+            cand.remove(best);
+            prevArtist = Text.norm(Text.mainArtist(best.artist));
+            if (curveOut != null && i < curveOut.length) curveOut[i] = intensity(best);
+        }
         return out;
     }
 

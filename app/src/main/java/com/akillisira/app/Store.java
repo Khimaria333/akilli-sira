@@ -38,12 +38,14 @@ public final class Store {
 
     private final File file;
     private final SharedPreferences dislikes;
+    private final SharedPreferences likes;
     private List<Play> plays;          // en yeni başta
     private volatile int version;
 
     public Store(Context c) {
         file = new File(c.getFilesDir(), "gecmis.jsonl");
         dislikes = c.getSharedPreferences("begenmedim", Context.MODE_PRIVATE);
+        likes = c.getSharedPreferences("begendim", Context.MODE_PRIVATE);
     }
 
     /** Ekranın ne zaman yeniden çizileceğini bilmesi için. */
@@ -138,10 +140,88 @@ public final class Store {
     }
 
     // =====================================================================
+    // Beğenilenler ❤️
+    // =====================================================================
+
+    public static final class Liked {
+        public String key, artist, title, cover;
+        public long deezerId, artistId, ts;
+
+        public Track toTrack() {
+            Track t = new Track();
+            t.title = title;
+            t.artist = artist;
+            t.deezerId = deezerId;
+            t.artistId = artistId;
+            t.coverUrl = cover;
+            t.lang = Lang.detect(title, artist);
+            t.sources.add("plan");
+            return t;
+        }
+    }
+
+    public synchronized void like(String key, String artist, String title, long deezerId, long artistId, String cover) {
+        likes.edit().putString(key, artist + "\t" + title + "\t" + System.currentTimeMillis() + "\t"
+                + deezerId + "\t" + artistId + "\t" + (cover == null ? "" : cover)).apply();
+        undislikeQuiet(key);
+        version++;
+    }
+
+    public synchronized void unlike(String key) {
+        likes.edit().remove(key).apply();
+        version++;
+    }
+
+    public synchronized boolean isLiked(String key) {
+        return key != null && likes.contains(key);
+    }
+
+    public synchronized java.util.Set<String> likedKeys() {
+        return new java.util.HashSet<>(likes.getAll().keySet());
+    }
+
+    public synchronized List<Liked> liked() {
+        List<Liked> out = new ArrayList<>();
+        for (Map.Entry<String, ?> en : likes.getAll().entrySet()) {
+            String[] p = String.valueOf(en.getValue()).split("\t", -1);
+            Liked l = new Liked();
+            l.key = en.getKey();
+            l.artist = p.length > 0 ? p[0] : "";
+            l.title = p.length > 1 ? p[1] : "";
+            l.ts = parseLong(p, 2);
+            l.deezerId = parseLong(p, 3);
+            l.artistId = parseLong(p, 4);
+            l.cover = p.length > 5 && !p[5].isEmpty() ? p[5] : null;
+            out.add(l);
+        }
+        out.sort((x, y) -> Long.compare(y.ts, x.ts));
+        return out;
+    }
+
+    /** Sanatçı (normalize) → beğenilen şarkı sayısı */
+    public synchronized Map<String, Integer> likedArtists() {
+        Map<String, Integer> out = new HashMap<>();
+        for (Liked l : liked()) {
+            String a = Text.norm(Text.mainArtist(l.artist));
+            out.put(a, out.getOrDefault(a, 0) + 1);
+        }
+        return out;
+    }
+
+    private static long parseLong(String[] p, int i) {
+        try { return p.length > i && !p[i].isEmpty() ? Long.parseLong(p[i]) : 0; } catch (Exception e) { return 0; }
+    }
+
+    private void undislikeQuiet(String key) {
+        if (dislikes.contains(key)) dislikes.edit().remove(key).apply();
+    }
+
+    // =====================================================================
     // Beğenilmeyenler
     // =====================================================================
 
     public synchronized void dislike(String key, String artist, String title) {
+        if (likes.contains(key)) likes.edit().remove(key).apply();
         dislikes.edit().putString(key, artist + "\t" + title + "\t" + System.currentTimeMillis()).apply();
         version++;
     }
