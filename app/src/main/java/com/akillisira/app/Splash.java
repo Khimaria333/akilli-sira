@@ -59,14 +59,14 @@ final class Splash {
         decor.addView(ov, new ViewGroup.LayoutParams(Ui.MATCH, Ui.MATCH));
 
         // Başlangıç durumu
-        float rise = Ui.dp(a, 70);
+        float rise = Ui.dp(a, 80);   // çerçevenin altıyla yazı arasında ~24dp boşluk kalsın
         frame.setAlpha(0f);
         frame.setScaleX(0.9f);
         frame.setScaleY(0.9f);
         word.setAlpha(0f);
-        word.setTranslationY(rise + Ui.dp(a, 18));
+        word.setTranslationY(rise + Ui.dp(a, 20));
         tag.setAlpha(0f);
-        tag.setTranslationY(rise + Ui.dp(a, 62));
+        tag.setTranslationY(rise + Ui.dp(a, 66));
 
         PathInterpolator ease = new PathInterpolator(0.2f, 0f, 0f, 1f);
         frame.animate().alpha(1f).scaleX(1f).scaleY(1f).setStartDelay(120).setDuration(560)
@@ -74,7 +74,7 @@ final class Splash {
         mark.animate().alpha(0f).setStartDelay(420).setDuration(380).start();
         logo.animate().translationY(-rise).setStartDelay(520).setDuration(650).setInterpolator(ease).start();
         word.animate().alpha(1f).translationY(rise).setStartDelay(700).setDuration(560).setInterpolator(ease).start();
-        tag.animate().alpha(1f).translationY(rise + Ui.dp(a, 48)).setStartDelay(860).setDuration(520)
+        tag.animate().alpha(1f).translationY(rise + Ui.dp(a, 50)).setStartDelay(860).setDuration(520)
                 .setInterpolator(ease).start();
 
         final boolean[] gone = {false};
