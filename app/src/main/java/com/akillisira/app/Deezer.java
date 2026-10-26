@@ -26,6 +26,7 @@ import java.util.concurrent.Future;
 public class Deezer {
     private static final String BASE = "https://api.deezer.com";
     private final Map<Long, Track> detailCache = new ConcurrentHashMap<>();
+    private final Map<Long, Object[]> albumCache = new ConcurrentHashMap<>();   // albüm → {genreId, genreName, year}
 
     // ---------- Şarkıyı bulma ----------
 
@@ -120,6 +121,8 @@ public class Deezer {
         if (cached != null) {
             t.bpm = cached.bpm;
             t.gain = cached.gain;
+            if (t.year == 0) t.year = cached.year;
+            if (t.albumId == 0) t.albumId = cached.albumId;
             if (t.coverUrl == null) { t.coverUrl = cached.coverUrl; t.coverBigUrl = cached.coverBigUrl; }
             t.detailsLoaded = true;
             return;
@@ -129,6 +132,9 @@ public class Deezer {
             t.bpm = o.optDouble("bpm", 0);
             t.gain = o.has("gain") ? o.optDouble("gain", Double.NaN) : Double.NaN;
             if (t.durationSec == 0) t.durationSec = o.optInt("duration");
+            t.year = yearOf(o.optString("release_date"));
+            JSONObject alb = o.optJSONObject("album");
+            if (alb != null && t.albumId == 0) t.albumId = alb.optLong("id");
             if (t.coverUrl == null) {
                 JSONObject al = o.optJSONObject("album");
                 if (al != null) {
@@ -144,6 +150,61 @@ public class Deezer {
             detailCache.put(t.deezerId, t);
         } catch (IOException ignored) {
             // detay gelmezse şarkı yine aday kalır, sadece BPM'i bilinmez
+        }
+    }
+
+    /** Albümün türünü (ve yılını) doldurur; albüm başına bir kez sorulur. */
+    public void fillGenre(Track t) {
+        if (t.albumId <= 0 || t.genreId != 0) return;
+        Object[] c = albumCache.get(t.albumId);
+        if (c == null) {
+            try {
+                JSONObject o = get("/album/" + t.albumId);
+                int gid = o.optInt("genre_id", 0);
+                String gname = null;
+                JSONObject gs = o.optJSONObject("genres");
+                JSONArray gd = gs != null ? gs.optJSONArray("data") : null;
+                if (gd != null && gd.length() > 0) {
+                    JSONObject g0 = gd.optJSONObject(0);
+                    if (g0 != null) {
+                        gname = emptyToNull(g0.optString("name"));
+                        if (gid <= 0) gid = g0.optInt("id", 0);
+                    }
+                }
+                int y = yearOf(o.optString("release_date"));
+                c = new Object[]{gid > 0 ? gid : -1, gname, y};
+            } catch (IOException e) {
+                return;
+            }
+            albumCache.put(t.albumId, c);
+        }
+        t.genreId = (Integer) c[0];
+        t.genre = (String) c[1];
+        int ay = (Integer) c[2];
+        // Derleme albümleri yılı bozabilir: en eski yılı kullan
+        if (ay > 0 && (t.year == 0 || ay < t.year)) t.year = ay;
+    }
+
+    public void fillGenresAll(List<Track> tracks) {
+        ExecutorService pool = Executors.newFixedThreadPool(4);
+        try {
+            List<Future<?>> fs = new ArrayList<>();
+            for (Track t : tracks) fs.add(pool.submit(() -> fillGenre(t)));
+            for (Future<?> f : fs) {
+                try { f.get(); } catch (Exception ignored) {}
+            }
+        } finally {
+            pool.shutdown();
+        }
+    }
+
+    private static int yearOf(String date) {
+        if (date == null || date.length() < 4) return 0;
+        try {
+            int y = Integer.parseInt(date.substring(0, 4));
+            return y >= 1900 && y <= 2100 ? y : 0;
+        } catch (Exception e) {
+            return 0;
         }
     }
 
@@ -183,6 +244,7 @@ public class Deezer {
             }
             JSONObject al = o.optJSONObject("album");
             if (al != null) {
+                t.albumId = al.optLong("id");
                 t.coverUrl = emptyToNull(al.optString("cover_medium"));
                 t.coverBigUrl = emptyToNull(al.optString("cover_xl"));
                 if (t.coverBigUrl == null) t.coverBigUrl = emptyToNull(al.optString("cover_big"));

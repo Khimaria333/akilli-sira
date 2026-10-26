@@ -215,7 +215,26 @@ public final class Engine {
 
     public String getVibe() { return prefs.getString("vibe", null); }
 
+    private static final long SESSION_TTL = 4L * 3600 * 1000;
+
+    /** Ruh hali modu 4 saat sonra kendiliğinden kapanır (arabadayken kapanmaz). */
+    private boolean sessionExpired() {
+        if (carActive) return false;
+        if (getVibe() == null && getMoodId() == null) return false;
+        long ts = prefs.getLong("sessionTs", 0);
+        if (System.currentTimeMillis() - ts > SESSION_TTL) {
+            prefs.edit().remove("vibe").remove("mood").remove("place").remove("sessionTs").apply();
+            return true;
+        }
+        return false;
+    }
+
+    private void touchSession() {
+        prefs.edit().putLong("sessionTs", System.currentTimeMillis()).apply();
+    }
+
     public Moods.Target sessionTarget() {
+        if (sessionExpired()) return null;
         String v = getVibe();
         if (v != null) return Vibe.parse(v, hourNow()).target(isTurkish());
         return Moods.target(Moods.mood(getMoodId()), Moods.place(getPlaceId()), isTurkish());
@@ -226,7 +245,8 @@ public final class Engine {
     }
 
     public void setSession(String moodId, String placeId) {
-        prefs.edit().putString("mood", moodId).putString("place", placeId).apply();
+        prefs.edit().putString("mood", moodId).putString("place", placeId)
+                .putLong("sessionTs", System.currentTimeMillis()).apply();
         notifyChanged();
     }
 
@@ -516,6 +536,7 @@ public final class Engine {
                 .putString("mood", getMoodId() != null ? getMoodId() : "mutlu")
                 .putString("place", "araba")
                 .apply();
+        touchSession();
         log("🚗 " + name + " bağlandı: Arabada modu");
         refresh();
         notifyChanged();
@@ -787,6 +808,7 @@ public final class Engine {
                     s.artist = artist;
                 }
                 deezer.fillDetails(s);
+                deezer.fillGenre(s);
                 s.lang = Lang.detect(s.title, s.artist);
                 ctx.seed = s;
                 List<Track> ranked = buildQueue(s, ctx, hist, planCopy, turkish);
@@ -830,24 +852,33 @@ public final class Engine {
     private List<Track> buildQueue(Track s, Scorer.Ctx ctx, Set<String> hist, List<Track> planList,
                                    boolean turkish) {
         List<Track> pool = new ArrayList<>(planList);
+        Set<Long> relSet = new HashSet<>(), radioSet = new HashSet<>();
         if (s.artistId > 0) {
-            pool.addAll(safe(() -> deezer.artistRadio(s.artistId, 30)));
-            // Her seferinde farklı 6 benzer sanatçı, her birinin ilk 12 şarkısından rastgele 4'ü
+            // Sanatçı radyosu: Deezer'in bu sanatçıya benzer bulduğu şarkılar (tarzın en güçlü işareti)
+            List<Track> radio = safe(() -> deezer.artistRadio(s.artistId, 30));
+            for (Track t : radio) if (t.artistId > 0) radioSet.add(t.artistId);
+            pool.addAll(radio);
+            // Benzer sanatçılar: her seferinde farklı 7'si, her birinin ilk 12 şarkısından rastgele 4'ü
             List<Long> rels = new ArrayList<>(safe(() -> deezer.related(s.artistId, 15)));
+            relSet.addAll(rels);
             Collections.shuffle(rels, rnd);
-            for (Long rel : rels.subList(0, Math.min(6, rels.size()))) {
+            for (Long rel : rels.subList(0, Math.min(7, rels.size()))) {
                 pool.addAll(sample(safe(() -> deezer.artistTop(rel, 12, "related")), 4));
             }
             pool.addAll(sample(safe(() -> deezer.artistTop(s.artistId, 12, "same")), 3));
         }
-        // Ruh hali ya da Türkçe mod için ek kaynak: çalma listeleri
+        radioSet.remove(s.artistId);
+        ctx.relatedArtists = relSet;
+        ctx.radioArtists = radioSet;
+
+        // Ek kaynak: önce çalan şarkının TÜRÜNE uygun Türkçe liste, sonra (varsa) ruh hali listeleri
         List<String> queries = new ArrayList<>();
+        if (turkish) queries.addAll(Scorer.genreQueries(s));
         if (ctx.target != null) queries.addAll(ctx.target.queries);
-        else if (turkish) queries.addAll(Moods.defaultTurkishQueries(s));
-        boolean seedForeign = turkish && s.lang == Lang.FOREIGN;
-        int maxQ = seedForeign ? 3 : 2;
+        else if (turkish && queries.isEmpty()) queries.addAll(Moods.defaultTurkishQueries(s));
+        int maxQ = (turkish && s.lang == Lang.FOREIGN) ? 3 : 2;
         for (int i = 0; i < queries.size() && i < maxQ; i++) {
-            pool.addAll(sample(playlistPool(queries.get(i), turkish, 1, 80), 30));
+            pool.addAll(sample(playlistPool(queries.get(i), turkish, 1, 80), 25));
         }
 
         List<Track> list = dedupe(pool, s.key(), hist);
@@ -856,6 +887,7 @@ public final class Engine {
 
         list = preselect(list, 40);
         deezer.fillDetailsAll(list);
+        deezer.fillGenresAll(list);      // tür ve çıkış yılı
         return applyVariety(Scorer.rank(ctx, list), s.key());
     }
 
@@ -1033,7 +1065,8 @@ public final class Engine {
     /** Serbest cümleden ("akşamüstü sahilde sakin bir şeyler") öneri listesi. */
     public Vibe.Result discoverText(String text) {
         Vibe.Result r = Vibe.parse(text, hourNow());
-        prefs.edit().putString("vibe", text).putString("mood", r.moodId).putString("place", r.placeId).apply();
+        prefs.edit().putString("vibe", text).putString("mood", r.moodId).putString("place", r.placeId)
+                .putLong("sessionTs", System.currentTimeMillis()).apply();
         final boolean turkish = isTurkish();
         log("Anlaşılan: " + r.summary());
         runDiscover(r.target(turkish), turkish, null);

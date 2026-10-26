@@ -2,17 +2,21 @@ package com.akillisira.app;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
- * Aday şarkıları puanlar.
+ * Aday şarkıları puanlar. Öncelik sırası: TARZ > DÖNEM > TEMPO/ENERJİ.
  *
- *  BPM uyumu     en fazla 40  (çalan şarkıya ve/veya ruh hali aralığına; yarı/çift tempo da sayılır)
- *  Enerji uyumu  en fazla 25  (ses yüksekliğine göre yaklaşık)
- *  Benzerlik     en fazla 23  (benzer sanatçı, radyo, ruh hali listesi, Keşfet listesi)
- *  Popülerlik    en fazla 5 (hep aynı hitler öne çıkmasın diye düşük)
- *  Çeşitlilik    Global modda dil dengesi +6
+ *  Tarz          en fazla 38  benzer sanatçı (20) / aynı çevre (14) + aynı tür (18), alakasız türe -16
+ *  Dönem         en fazla 10  çıkış yılları yakınsa; 20+ yıl farka -10
+ *  Tempo (BPM)   en fazla 25  çalan şarkıya ve/veya ruh hali aralığına; yarı/çift tempo da sayılır
+ *  Enerji        en fazla 15  ses yüksekliğine göre yaklaşık
+ *  Kaynak        Keşfet listen +20, ruh hali listesi +8 (sadece ruh hali açıkken)
+ *  Popülerlik    en fazla 5
+ *  Beğeniler     ❤️ şarkı +12, ❤️ sanatçı +6..15; 👎 sanatçı -12..30
  *  Cezalar       aynı sanatçı arka arkaya, yakında çalınan sanatçı, çok kısa/uzun
  */
 public final class Scorer {
@@ -28,6 +32,8 @@ public final class Scorer {
         public java.util.Map<String, Integer> artistDislikes; // sanatçı → beğenilmeyen şarkı sayısı
         public java.util.Map<String, Integer> artistLikes;    // sanatçı → beğenilen şarkı sayısı
         public java.util.Set<String> likedKeys;               // beğenilen şarkılar
+        public Set<Long> relatedArtists;   // çalan sanatçının benzerleri (Deezer)
+        public Set<Long> radioArtists;     // çalan sanatçının radyosunda geçen sanatçılar
     }
 
     public static double preScore(Track c) {
@@ -54,7 +60,39 @@ public final class Scorer {
             double s = 0;
             List<String> why = new ArrayList<>();
 
-            // ---- BPM ----
+            // ---- TARZ: sanatçı yakınlığı + tür ----
+            if (seed != null) {
+                boolean rel = x.relatedArtists != null && c.artistId > 0 && x.relatedArtists.contains(c.artistId);
+                boolean rad = !rel && x.radioArtists != null && c.artistId > 0 && x.radioArtists.contains(c.artistId);
+                if (rel) { s += 20; why.add("benzer sanatçı"); }
+                else if (rad) { s += 14; why.add("aynı çevreden"); }
+
+                if (seed.genreId > 0 && c.genreId > 0) {
+                    int g = genreRelation(seed, c);
+                    if (g == 2) {
+                        s += 18;
+                        why.add(c.genre != null ? "aynı tür: " + c.genre : "aynı tür");
+                    } else if (g == 1) {
+                        s += 7;
+                    } else {
+                        s -= (rel || rad) ? 5 : 16;   // benzer sanatçıysa Deezer türüne az takıl
+                    }
+                } else {
+                    s += 4;   // tür bilinmiyor: tarafsız
+                }
+
+                // ---- DÖNEM ----
+                if (seed.year > 0 && c.year > 0) {
+                    int d = Math.abs(seed.year - c.year);
+                    if (d <= 4) { s += 10; why.add("aynı dönem"); }
+                    else if (d <= 9) s += 6;
+                    else if (d >= 20) s -= 10;
+                } else {
+                    s += 3;
+                }
+            }
+
+            // ---- TEMPO ----
             double pSeed = Double.NaN, pRange = Double.NaN;
             if (seedBpm > 0 && c.hasBpm()) pSeed = closeness(bpmDistance(c.bpm, seedBpm));
             if (x.target != null && c.hasBpm()) pRange = rangeCloseness(c.bpm, x.target.bpmLo, x.target.bpmHi);
@@ -63,8 +101,8 @@ public final class Scorer {
             else if (!Double.isNaN(pSeed)) pBpm = pSeed;
             else if (!Double.isNaN(pRange)) pBpm = pRange;
             else pBpm = 0.35;
-            s += 40 * pBpm;
-            if (c.hasBpm() && pBpm >= 0.55) {
+            s += 25 * pBpm;
+            if (c.hasBpm() && pBpm >= 0.6) {
                 if (seed != null && seed.hasBpm()) {
                     String extra = "";
                     if (Math.abs(c.bpm * 2 - seedBpm) < Math.abs(c.bpm - seedBpm)) extra = " (yarı tempo)";
@@ -75,25 +113,20 @@ public final class Scorer {
                 }
             }
 
-            // ---- Enerji ----
+            // ---- ENERJİ ----
             if (!Double.isNaN(gainTarget) && c.hasGain()) {
                 double p = Math.max(0, 1 - Math.abs(c.gain - gainTarget) / 6.0);
-                s += 25 * p;
-                if (p >= 0.6) {
-                    if (x.mode > 0) why.add("daha enerjik");
-                    else if (x.mode < 0) why.add("daha sakin");
-                    else why.add("enerjisi uyumlu");
-                }
+                s += 15 * p;
+                if (p >= 0.7 && x.mode != 0) why.add(x.mode > 0 ? "daha enerjik" : "daha sakin");
             } else {
-                s += 25 * 0.4;
+                s += 15 * 0.4;
             }
 
-            // ---- Benzerlik / kaynak ----
-            s += sourceBonus(c);
-            if (c.sources.contains("plan")) why.add("senin listenden");
-            else if (c.sources.contains("related")) why.add("benzer sanatçı");
-            else if (c.sources.contains("mood") && x.target != null) why.add("ruh haline uygun");
-            else if (c.sources.contains("radio")) why.add("aynı tarz");
+            // ---- Kaynak ----
+            if (c.sources.contains("plan")) { s += 20; why.add("senin listenden"); }
+            else if (c.sources.contains("mood") && x.target != null) { s += 8; why.add("ruh haline uygun"); }
+            else if (c.sources.contains("same")) s += 4;
+            if (seed == null) s += sourceBonus(c) * 0.5;   // Keşfet'te (çalan yokken) kaynak daha önemli
 
             // ---- Popülerlik ----
             s += popularity(c);
@@ -104,7 +137,7 @@ public final class Scorer {
                 why.add(c.lang == Lang.TR ? "Türkçe ile dengele" : "yabancı ile dengele");
             }
 
-            // ---- Cezalar ----
+            // ---- Beğeniler ve cezalar ----
             if (seed != null && a.equals(seedArtist)) s -= 25;
             else if (x.recentArtists != null && x.recentArtists.contains(a)) s -= 12;
             if (c.durationSec > 0 && (c.durationSec < 90 || c.durationSec > 480)) s -= 15;
@@ -129,6 +162,57 @@ public final class Scorer {
         }
         out.sort((p, q) -> Double.compare(q.score, p.score));
         return out;
+    }
+
+    // =====================================================================
+    // Tür yakınlığı
+    // =====================================================================
+
+    private static final String[][] GENRE_GROUPS = {
+        {"rap", "hip hop", "hip-hop", "trap", "drill"},
+        {"pop", "dance", "r&b", "soul", "latin", "electro"},
+        {"rock", "alternative", "alternatif", "metal", "indie", "punk", "grunge"},
+        {"folk", "halk", "türkü", "world", "arabesk", "fantezi", "sanat", "traditional", "geleneksel"},
+        {"jazz", "caz", "blues", "soul", "classical", "klasik"},
+        {"electro", "dance", "house", "techno", "edm"},
+        {"r&b", "rap", "hip hop"},
+    };
+
+    /** 2: aynı tür, 1: yakın tür, 0: alakasız */
+    public static int genreRelation(Track a, Track b) {
+        if (a.genreId > 0 && a.genreId == b.genreId) return 2;
+        Set<Integer> ga = groups(a.genre), gb = groups(b.genre);
+        for (Integer g : ga) if (gb.contains(g)) return 1;
+        return 0;
+    }
+
+    private static Set<Integer> groups(String genre) {
+        Set<Integer> out = new HashSet<>();
+        if (genre == null) return out;
+        String g = genre.toLowerCase(Locale.forLanguageTag("tr"));
+        for (int i = 0; i < GENRE_GROUPS.length; i++) {
+            for (String k : GENRE_GROUPS[i]) if (g.contains(k)) { out.add(i); break; }
+        }
+        return out;
+    }
+
+    /** Çalan şarkının türüne uygun Türkçe çalma listesi araması. */
+    public static List<String> genreQueries(Track seed) {
+        List<String> q = new ArrayList<>();
+        String g = seed.genre == null ? "" : seed.genre.toLowerCase(Locale.forLanguageTag("tr"));
+        if (g.contains("rap") || g.contains("hip")) q.add("türkçe rap");
+        else if (g.contains("rock") || g.contains("alternative") || g.contains("metal")) q.add("türkçe rock");
+        else if (g.contains("arabesk")) q.add("arabesk");
+        else if (g.contains("folk") || g.contains("world") || g.contains("halk")) q.add("türk halk müziği");
+        else if (g.contains("jazz") || g.contains("caz")) q.add("türkçe caz");
+        else if (g.contains("dance") || g.contains("electro")) q.add("türkçe dance");
+        else if (g.contains("r&b")) q.add("türkçe r&b");
+        else if (g.contains("pop")) {
+            if (seed.year > 0 && seed.year < 1990) q.add("eski türkçe pop");
+            else if (seed.year > 0 && seed.year < 2005) q.add("90lar türkçe pop");
+            else q.add("türkçe pop hit");
+        }
+        return q;
     }
 
     /** Yoğunluk 0..1: tempo + enerji. */
@@ -241,7 +325,7 @@ public final class Scorer {
         double b = 0;
         if (c.sources.contains("plan")) b = Math.max(b, 20);
         if (c.sources.contains("related")) b = Math.max(b, 18);
-        if (c.sources.contains("mood")) b = Math.max(b, 15);
+        if (c.sources.contains("mood")) b = Math.max(b, 10);
         if (c.sources.contains("radio")) b = Math.max(b, 14);
         if (c.sources.contains("same")) b = Math.max(b, 6);
         if (c.sources.size() > 1) b += 5;

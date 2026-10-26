@@ -17,6 +17,10 @@ public class Track {
     public String coverUrl;            // albüm kapağı (küçük)
     public String coverBigUrl;         // albüm kapağı (büyük)
     public int lang = Lang.UNKNOWN;
+    public long albumId;
+    public int year;                   // çıkış yılı (0 = bilinmiyor)
+    public int genreId;                // Deezer türü (0 = bilinmiyor)
+    public String genre;               // "Rap/Hip Hop", "Pop" ...
     public volatile String videoId;    // YT Music'teki karşılığı
 
     /** Kaynaklar: "same" aynı sanatçı, "related" benzer sanatçı, "radio" sanatçı radyosu,
