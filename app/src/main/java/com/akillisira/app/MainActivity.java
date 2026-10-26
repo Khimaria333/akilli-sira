@@ -33,6 +33,7 @@ public class MainActivity extends Activity implements Engine.Listener {
 
     private LinearLayout setupCard;
     private TextView setupText;
+    private Button overlayBtn;
     private TextView statusText;
     private TextView nowTitle, nowInfo;
     private ProgressBar nowProgress;
@@ -100,6 +101,13 @@ public class MainActivity extends Activity implements Engine.Listener {
             startActivity(i);
         });
         setupCard.addView(appInfoBtn);
+        overlayBtn = button("Diğer uygulamaların üzerinde göster iznini aç");
+        overlayBtn.setOnClickListener(v -> {
+            Intent i = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);
+            i.setData(android.net.Uri.parse("package:" + getPackageName()));
+            startActivity(i);
+        });
+        setupCard.addView(overlayBtn);
         root.addView(setupCard);
 
         // Şu an çalan
@@ -189,14 +197,21 @@ public class MainActivity extends Activity implements Engine.Listener {
 
     private void render() {
         boolean perm = hasNotificationAccess();
-        setupCard.setVisibility(perm && engine.serviceConnected ? View.GONE : View.VISIBLE);
+        boolean overlay = Settings.canDrawOverlays(this);
+        setupCard.setVisibility(perm && overlay && engine.serviceConnected ? View.GONE : View.VISIBLE);
+        overlayBtn.setVisibility(overlay ? View.GONE : View.VISIBLE);
+        StringBuilder st = new StringBuilder();
         if (!perm) {
-            setupText.setText("1) Aşağıdaki düğmeyle \"Bildirim erişimi\" ekranını aç ve Akıllı Sıra'yı aç.\n\n"
-                    + "Anahtar gri ve basılamıyorsa: \"Uygulama bilgisi\" düğmesine bas, sağ üstteki ⋮ menüden "
-                    + "\"Kısıtlanmış ayarlara izin ver\"i seç, sonra tekrar dene.");
-        } else {
-            setupText.setText("İzin verildi, servis başlatılıyor… Birkaç saniye içinde düzelmezse izni kapatıp tekrar aç.");
+            st.append("1) \"Bildirim erişimini aç\" düğmesine bas ve Akıllı Sıra'yı aç.\n"
+                    + "Anahtar gri ise: \"Uygulama bilgisi\" → sağ üst ⋮ → \"Kısıtlanmış ayarlara izin ver\", sonra tekrar dene.\n\n");
+        } else if (!engine.serviceConnected) {
+            st.append("Bildirim izni verildi, servis başlatılıyor… Düzelmezse izni kapatıp tekrar aç.\n\n");
         }
+        if (!overlay) {
+            st.append("2) Şarkı bitince YT Music'te sıradakini açabilmesi için "
+                    + "\"Diğer uygulamaların üzerinde göster\" iznini aç.");
+        }
+        setupText.setText(st.toString().trim());
 
         String status;
         if (!perm) status = "Kurulum gerekiyor";
@@ -230,7 +245,8 @@ public class MainActivity extends Activity implements Engine.Listener {
             pickInfo.setText("BPM ve enerji bilgileri alınıyor");
         } else if (pk != null) {
             pickTitle.setText(pk.artist + " – " + pk.title);
-            pickInfo.setText(pk.reason + "\n" + describe(pk));
+            pickInfo.setText(pk.reason + "\n" + describe(pk)
+                    + (pk.videoId != null ? " · YT Music bağlantısı hazır ✓" : " · YT Music'te aranıyor…"));
         } else {
             pickTitle.setText("—");
             pickInfo.setText(engine.problem != null ? engine.problem : "");

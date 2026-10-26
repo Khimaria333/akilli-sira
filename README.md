@@ -9,7 +9,7 @@ YouTube Music'te bir şarkı açtığında, ona en uygun şarkıyı (BPM, enerji
    Aynı sanatçının radyosu, benzer sanatçılar ve sanatçının popüler şarkılarından ~36 aday toplar.
 3. **Puanlar:** BPM uyumu (yarı/çift tempo dahil) en fazla 40, enerji uyumu 25, benzerlik 18,
    popülerlik 8 puan. Aynı sanatçı arka arkaya gelirse ve yakında çalınan şarkılar için ceza var.
-4. **Geçer:** Şarkının bitmesine ~1 saniye kala YT Music'e "şunu çal" komutu gönderir.
+4. **Geçer:** Sıradaki şarkının YT Music bağlantısını önceden bulur, şarkının bitmesine ~1,5 saniye kala YT Music'te o bağlantıyı açar.
    YT Music kendi şarkısına geçmişse bunu fark eder ve düzeltir.
 
 "Hava" ayarı: Sakinleştir (biraz daha yavaş/sakin), Aynı kalsın, Hareketlendir (biraz daha hızlı/enerjik).
@@ -22,7 +22,8 @@ ve deponun **Releases** sayfasına `AkilliSira.apk` olarak koyar.
 1. Releases sayfasından `AkilliSira.apk` dosyasını indir, aç, "bilinmeyen kaynaklara izin ver" de, kur.
 2. Uygulamayı aç → **Bildirim erişimini aç** → Akıllı Sıra'yı aç.
    - Anahtar gri ise: uygulamada **Uygulama bilgisi** → sağ üst ⋮ → **Kısıtlanmış ayarlara izin ver** → tekrar dene.
-3. YT Music'te bir şarkı aç. Uygulamada "Sıradaki" birkaç saniye içinde dolar.
+3. Uygulamadaki "Diğer uygulamaların üzerinde göster" iznini aç (arka planda geçiş için gerekli).
+4. YT Music'te bir şarkı aç. Uygulamada "Sıradaki" birkaç saniye içinde dolar.
 
 ## Bilinen sınırlar
 - YT Music'in resmi bir API'si yok. Geçiş, Android'in standart "aramayla çal" komutuyla yapılıyor;

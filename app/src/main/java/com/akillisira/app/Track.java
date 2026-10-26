@@ -14,6 +14,7 @@ public class Track {
     public double bpm = 0;         // 0 = bilinmiyor
     public double gain = Double.NaN; // ses yüksekliği (dB), enerji için yaklaşık ölçü
     public boolean detailsLoaded;
+    public volatile String videoId;  // YT Music'teki karşılığı (bulunduysa)
 
     /** Nereden geldi: "same" (aynı sanatçı), "related" (benzer sanatçı), "radio" (sanatçı radyosu) */
     public final Set<String> sources = new LinkedHashSet<>();

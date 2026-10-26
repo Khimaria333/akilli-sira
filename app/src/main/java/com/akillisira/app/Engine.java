@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.media.session.MediaController;
 import android.media.session.PlaybackState;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -39,7 +40,7 @@ public final class Engine {
     public interface Listener { void onEngineChanged(); }
 
     public static final String YTM = "com.google.android.apps.youtube.music";
-    private static final long SWITCH_BEFORE_END_MS = 1200;   // bitişe bu kadar kala geç
+    private static final long SWITCH_BEFORE_END_MS = 1500;   // bitişe bu kadar kala geç
     private static final long NEAR_END_MS = 6000;            // YT Music kendi şarkısına geçtiyse anlamak için
 
     private static Engine instance;
@@ -53,6 +54,7 @@ public final class Engine {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Deezer deezer = new Deezer();
     private final SharedPreferences prefs;
+    private final Context app;
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
 
     // ---- Ekranda gösterilen durum ----
@@ -78,6 +80,7 @@ public final class Engine {
     private long lastRemainingMs = Long.MAX_VALUE;
 
     private Engine(Context app) {
+        this.app = app;
         prefs = app.getSharedPreferences("ayarlar", Context.MODE_PRIVATE);
     }
 
@@ -193,6 +196,7 @@ public final class Engine {
         }
         alternatives = rest;
         log("Sıradaki olarak seçildi: " + t);
+        prefetchVideoId(t);
         notifyChanged();
     }
 
@@ -207,42 +211,67 @@ public final class Engine {
     private void fire(Track t, Activity foreground) {
         firedForCurrent = true;
         expectSwitchUntil = SystemClock.elapsedRealtime() + 15000;
-        String query = Text.mainArtist(t.artist) + " " + Text.cleanTitle(t.title);
+        if (t.videoId != null) {
+            launch(t, foreground);
+        } else {
+            // Bağlantı henüz bulunmadıysa önce bul, sonra aç
+            worker.submit(() -> {
+                t.videoId = YtMusic.findVideoId(t.artist, t.title);
+                main.post(() -> launch(t, foreground));
+            });
+        }
+    }
 
+    /** Bağlantıyı YT Music'te açar; olmazsa eski "aramayla çal" yöntemini dener. */
+    private void launch(Track t, Activity foreground) {
+        if (t.videoId != null) {
+            try {
+                Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(YtMusic.watchUrl(t.videoId)));
+                i.setPackage(YTM);
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                (foreground != null ? foreground : app).startActivity(i);
+                log("→ YT Music'te açıldı: " + t);
+                notifyChanged();
+                return;
+            } catch (Exception e) {
+                log("Bağlantı açılamadı: " + e.getMessage());
+            }
+        } else {
+            log("YT Music'te bağlantısı bulunamadı, arama deneniyor");
+        }
+
+        // Yedek: aramayla çal
+        String query = Text.mainArtist(t.artist) + " " + Text.cleanTitle(t.title);
         Bundle extras = new Bundle();
         extras.putString(MediaStore.EXTRA_MEDIA_FOCUS, MediaStore.Audio.Media.ENTRY_CONTENT_TYPE);
         extras.putString(MediaStore.EXTRA_MEDIA_TITLE, t.title);
         extras.putString(MediaStore.EXTRA_MEDIA_ARTIST, t.artist);
         extras.putString(SearchManager.QUERY, query);
-
-        boolean viaSession = controller != null && (supportsPlayFromSearch() || foreground == null);
-        if (viaSession) {
+        if (controller != null) {
             try {
                 controller.getTransportControls().playFromSearch(query, extras);
-                log("→ YT Music'e gönderildi: " + t);
-                notifyChanged();
-                return;
+                log("→ YT Music'e arama ile gönderildi: " + t);
             } catch (Exception e) {
-                log("Oturum üzerinden çalınamadı: " + e.getMessage());
-            }
-        }
-        if (foreground != null) {
-            try {
-                Intent i = new Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH);
-                i.setPackage(YTM);
-                i.putExtras(extras);
-                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                foreground.startActivity(i);
-                log("→ YT Music'e (arama ile) gönderildi: " + t);
-            } catch (Exception e) {
-                log("YT Music açılamadı: " + e.getMessage());
+                log("Arama ile de çalınamadı: " + e.getMessage());
                 expectSwitchUntil = 0;
             }
-        } else if (controller == null) {
+        } else {
             log("YT Music bağlı değil, geçilemedi");
             expectSwitchUntil = 0;
         }
         notifyChanged();
+    }
+
+    private void prefetchVideoId(Track t) {
+        if (t == null || t.videoId != null) return;
+        worker.submit(() -> {
+            String id = YtMusic.findVideoId(t.artist, t.title);
+            t.videoId = id;
+            main.post(() -> {
+                if (id == null) log("YT Music bağlantısı bulunamadı: " + t);
+                notifyChanged();
+            });
+        });
     }
 
     // ================= Sıradakini hesaplama =================
@@ -281,6 +310,7 @@ public final class Engine {
                         pick = ranked.get(0);
                         alternatives = new ArrayList<>(ranked.subList(1, Math.min(7, ranked.size())));
                         log("Sıradaki: " + pick + "  (" + pick.reason + ")");
+                        prefetchVideoId(pick);
                     }
                     notifyChanged();
                 });
