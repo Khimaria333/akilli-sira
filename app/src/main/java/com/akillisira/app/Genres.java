@@ -56,14 +56,58 @@ public final class Genres {
         return null;
     }
 
-    /** Tür hedefi: tempo/enerji serbest, etiketler ve aramalar türü belirler. */
+    /** Türün Last.fm'de geniş eşleşen etiketleri (dil süzgeci ayrıca uygulanır). */
+    public static String[] styleTags(Genre g) {
+        switch (g.id) {
+            case "rap": case "g_hiphop": return a("rap", "hip-hop", "hip hop", "trap", "drill");
+            case "rock": case "g_rock": return a("rock", "metal", "punk", "grunge");
+            case "anadolurock": return a("anatolian rock", "anadolu rock", "turkish psychedelic", "psychedelic rock");
+            case "elektronik": case "g_electronic": return a("electronic", "house", "edm", "techno", "electro", "dance");
+            case "arabesk": return a("arabesk", "arabesque", "fantezi");
+            default: return g.tags;
+        }
+    }
+
+    /** Last.fm etiketi bilinmezken kullanılacak Deezer tür kimlikleri. */
+    public static int[] deezerIds(Genre g) {
+        switch (g.id) {
+            case "rap": case "g_hiphop": return new int[]{116};
+            case "rock": case "g_rock": case "anadolurock": return new int[]{152, 464};
+            case "pop": case "g_pop": case "90lar": return new int[]{132};
+            case "elektronik": case "g_electronic": return new int[]{106, 113};
+            case "caz": case "g_jazz": return new int[]{129};
+            case "alternatif": case "g_indie": return new int[]{85};
+            case "g_rnb": return new int[]{165};
+            case "g_latin": return new int[]{197};
+            case "g_classical": return new int[]{98};
+            default: return new int[0];
+        }
+    }
+
+    /** Tür değil daha çok "hava" olanlar: zorunlu tutulmaz, sadece etiketle puan kazandırır. */
+    private static final java.util.Set<String> SOFT = new java.util.HashSet<>(java.util.Arrays.asList(
+            "slow", "akustik", "90lar", "pop", "g_pop", "g_acoustic", "g_80s", "g_lofi"));
+
+    /** Tür hedefine türü yerleştirir. */
+    public static void applyStyle(Moods.Target t, Genre g) {
+        for (String q : g.queries) if (!t.styleQueries.contains(q)) t.styleQueries.add(q);
+        if (SOFT.contains(g.id)) {
+            for (String s : g.tags) if (!t.tags.contains(s)) t.tags.add(s);
+            return;
+        }
+        for (String s : styleTags(g)) if (!t.style.contains(s)) t.style.add(s);
+        for (int id : deezerIds(g)) t.styleDeezer.add(id);
+        t.styleLabel = g.emoji + " " + g.label;
+    }
+
+    /** Tür hedefi: tempo/enerji serbest, tür etiketleri tarzı belirler. */
     public static Moods.Target target(Genre g) {
         Moods.Target t = new Moods.Target();
         t.bpmLo = 40;
         t.bpmHi = 220;
         t.gain = Double.NaN;
         for (String q : g.queries) t.queries.add(q);
-        for (String tg : g.tags) t.tags.add(tg);
+        applyStyle(t, g);
         t.label = g.emoji + " " + g.label;
         return t;
     }

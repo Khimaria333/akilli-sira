@@ -126,6 +126,90 @@ public final class Vibe {
         PLACE_KEYS.put("ev", a("ev", "evde", "oda", "koltuk", "kanepe"));
     }
 
+    // Türler: {Türkçe tür, Global tür, anahtar kelimeler...}. Sıra önemli (anadolu rock, rock'tan önce).
+    private static final String[][] GENRE_KEYS = {
+        {"anadolurock", "anadolurock", "anadolu rock", "anadolu rok"},
+        {"rap", "g_hiphop", "rap ", "rapçı ", "rapçi", "rapler", "rapı ", "rapli ", "rapte ", "hip hop", "hiphop", "trap", "drill"},
+        {"rock", "g_rock", "rock", "rok ", "metal", "punk", "grunge"},
+        {"arabesk", "arabesk", "arabesk", "damar"},
+        {"fantezi", "fantezi", "fantezi"},
+        {"tsm", "tsm", "sanat müziği", "tsm", "klasik türk"},
+        {"turku", "turku", "türkü", "halk müziği", "bağlama"},
+        {"elektronik", "g_electronic", "elektronik", "edm", "house", "techno", "tekno", "electro"},
+        {"caz", "g_jazz", "caz ", "cazlı", "jazz"},
+        {"alternatif", "g_indie", "alternatif", "indie"},
+        {"akustik", "g_acoustic", "akustik", "unplugged"},
+        {"slow", "slow", "slow"},
+        {"g_lofi", "g_lofi", "lofi", "lo fi"},
+        {"g_rnb", "g_rnb", "rnb", "soul"},
+        {"g_latin", "g_latin", "latin", "reggaeton"},
+        {"g_classical", "g_classical", "klasik müzik"},
+        {"pop", "g_pop", "pop"},
+    };
+
+    // "sert rap", "agresif bir şeyler"
+    private static final String[] HARD = a("sert", "agresif", "hard", "hardcore", "vurucu", "karanlık", "dark");
+
+    /** Tür + "sert" birlikteyken aranacak Last.fm etiketleri. */
+    private static String[] hardTags(String genreId) {
+        if (genreId == null) return a("aggressive", "heavy", "dark");
+        switch (genreId) {
+            case "rap": case "g_hiphop": return a("trap", "drill", "aggressive", "hardcore", "dark");
+            case "rock": case "g_rock": case "anadolurock": return a("hard rock", "metal", "heavy", "aggressive");
+            case "elektronik": case "g_electronic": return a("techno", "hard", "dark");
+            default: return a("aggressive", "heavy", "dark");
+        }
+    }
+
+    // Tür + mekan/ruh hali birleşik arama ekleri ("türkçe rap spor")
+    private static String placeWord(String placeId, boolean turkish) {
+        if (placeId == null) return null;
+        if (!turkish) {
+            switch (placeId) {
+                case "spor": return "workout";
+                case "araba": return "road trip";
+                case "parti": return "party";
+                case "yuruyus": return "walking";
+                case "uyku": return "chill";
+                case "is": return "focus";
+                default: return null;
+            }
+        }
+        switch (placeId) {
+            case "spor": return "spor";
+            case "araba": return "yolculuk";
+            case "parti": return "parti";
+            case "yuruyus": return "yürüyüş";
+            case "uyku": return "sakin";
+            case "is": return "çalışırken";
+            default: return null;
+        }
+    }
+
+    private static String moodWord(String moodId, boolean turkish) {
+        if (moodId == null) return null;
+        if (!turkish) {
+            switch (moodId) {
+                case "huzunlu": return "sad";
+                case "romantik": return "love";
+                case "sakin": return "chill";
+                case "enerjik": return "energy";
+                case "nostaljik": return "classics";
+                case "mutlu": return "feel good";
+                default: return null;
+            }
+        }
+        switch (moodId) {
+            case "huzunlu": return "duygusal";
+            case "romantik": return "aşk";
+            case "sakin": return "sakin";
+            case "enerjik": return "hareketli";
+            case "nostaljik": return "eski";
+            case "mutlu": return "eğlenceli";
+            default: return null;
+        }
+    }
+
     // Yoğunluk sözcükleri
     private static final String[] CALMER = a("çok sakin", "iyice sakin", "fazla sakin", "yumuşak", "usul");
     private static final String[] UPPER = a("çok hareketli", "çok enerjik", "bas bas", "full gaz", "son ses");
@@ -138,6 +222,12 @@ public final class Vibe {
         public double bpmShift, gainShift;
         public final List<String> understood = new ArrayList<>();
         public boolean guessedMood;    // ruh hali açıkça yazılmadı, tahmin edildi
+        public String genreTr, genreGl;  // cümlede geçen tür (Türkçe / Global karşılığı)
+        public boolean hard;             // "sert", "agresif"
+
+        public Genres.Genre genre(boolean turkish) {
+            return Genres.byId(turkish ? genreTr : genreGl);
+        }
 
         /** Okunabilir özet: "🌙 Sakin · 🏖️ Sahil · 🌅 Gün batımı" */
         public String summary() {
@@ -188,6 +278,46 @@ public final class Vibe {
             t.tags.clear();
             t.tags.addAll(tg);
             t.label = sceneOnly ? summaryScenes() : summary();
+
+            // Cümlede tür geçiyorsa listeyi tür belirler; ruh hali/mekan sadece tempo ve enerjiyi ayarlar
+            Genres.Genre g = genre(turkish);
+            if (g != null) {
+                List<String> gq = new ArrayList<>();
+                // Türkçe: "türkçe rap spor"; Global: "rap workout"
+                String base = turkish ? g.queries[0] : Genres.styleTags(g)[0];
+                String pw = placeWord(placeId, turkish);
+                if (pw != null) gq.add(base + " " + pw);
+                if (hard) gq.add(turkish ? base + " sert" : "aggressive " + base);
+                if (!guessedMood) {
+                    String mw = moodWord(moodId, turkish);
+                    if (mw != null) gq.add(base + " " + mw);
+                }
+                for (String x : g.queries) if (!gq.contains(x)) gq.add(x);
+                if (sceneOnly) for (String x : q) if (!gq.contains(x)) gq.add(x);
+                t.queries.clear();
+                t.queries.addAll(gq);
+
+                // Tahmin edilen ruh halinin etiketleri ("dance", "party") türü bozmasın
+                if (guessedMood) {
+                    t.tags.clear();
+                    String[] pt = Moods.placeTags(placeId);
+                    if (pt != null) for (String x : pt) if (!t.tags.contains(x)) t.tags.add(x);
+                }
+                if (hard) for (String x : hardTags(g.id)) if (!t.tags.contains(x)) t.tags.add(x);
+                Genres.applyStyle(t, g);
+
+                // Rap/hip-hop yarı tempoda da gaz olabilir (90 BPM = 180): tempo aralığını aç
+                switch (g.id) {
+                    case "rap": case "g_hiphop": case "g_rnb": case "g_lofi":
+                        t.bpmLo = Math.min(t.bpmLo, 75); t.bpmHi = Math.max(t.bpmHi, 175); break;
+                    case "rock": case "g_rock": case "anadolurock":
+                        t.bpmLo = Math.min(t.bpmLo, 90); t.bpmHi = Math.max(t.bpmHi, 185); break;
+                    default:
+                        t.bpmLo *= 0.85; t.bpmHi *= 1.15; break;
+                }
+            } else if (hard) {
+                for (String x : hardTags(null)) if (!t.tags.contains(x)) t.tags.add(x);
+            }
             return t;
         }
     }
@@ -223,6 +353,20 @@ public final class Vibe {
             if (n > best) { best = n; r.placeId = en.getKey(); }
         }
 
+        // Tür
+        for (String[] gk : GENRE_KEYS) {
+            if (matchAny(s, java.util.Arrays.copyOfRange(gk, 2, gk.length))) {
+                r.genreTr = gk[0];
+                r.genreGl = gk[1];
+                break;
+            }
+        }
+        if (matchAny(s, HARD)) {
+            r.hard = true;
+            r.gainShift += 1.5;
+            r.bpmShift += 0.02;
+        }
+
         // Yoğunluk
         if (matchAny(s, CALMER)) { r.bpmShift -= 0.04; r.gainShift -= 1.0; }
         if (matchAny(s, UPPER)) { r.bpmShift += 0.04; r.gainShift += 1.0; }
@@ -233,12 +377,16 @@ public final class Vibe {
             if (!r.scenes.isEmpty()) r.moodId = r.scenes.get(0).defaultMood;
             else if ("spor".equals(r.placeId) || "parti".equals(r.placeId)) r.moodId = "enerjik";
             else if ("uyku".equals(r.placeId)) r.moodId = "sakin";
+            else if (r.hard) r.moodId = r.genreTr != null ? "enerjik" : "asi";
             else if ("is".equals(r.placeId)) r.moodId = "odak";
             else if (hour >= 22 || hour < 6) r.moodId = "sakin";
             else if (hour < 11) r.moodId = "mutlu";
             else r.moodId = "mutlu";
         }
 
+        Genres.Genre g = Genres.byId(r.genreTr);
+        if (g != null) r.understood.add(g.emoji + " " + g.label.replace("Türkçe ", ""));
+        if (r.hard) r.understood.add("🔥 Sert");
         Moods.Mood m = Moods.mood(r.moodId);
         if (m != null) r.understood.add(m.emoji + " " + m.label);
         Moods.Place p = Moods.place(r.placeId);

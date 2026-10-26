@@ -41,6 +41,15 @@ public final class Moods {
         public final List<String> queries = new ArrayList<>();
         public final List<String> tags = new ArrayList<>();   // Last.fm'de aranacak / eşleşecek etiketler
         public String label = "";
+        /** İstenen tür (rap, rock…): tarzı belirler, uymayanlar elenir. Boşsa tür serbest. */
+        public final List<String> style = new ArrayList<>();
+        /** Last.fm etiketi yokken türü tanımak için Deezer tür kimlikleri. */
+        public final java.util.Set<Integer> styleDeezer = new java.util.HashSet<>();
+        public String styleLabel;
+        /** Tür listeleri (yedek aramalar için). */
+        public final List<String> styleQueries = new ArrayList<>();
+
+        public boolean hasStyle() { return !style.isEmpty(); }
     }
 
     private static String[] a(String... s) { return s; }
@@ -130,6 +139,10 @@ public final class Moods {
         if (MOOD_TAGS.containsKey(m.id)) for (String g : MOOD_TAGS.get(m.id)) t.tags.add(g);
         t.label = m.emoji + " " + m.label + (p != null ? "  ·  " + p.emoji + " " + p.label : "");
         return t;
+    }
+
+    public static String[] placeTags(String placeId) {
+        return placeId == null ? null : PLACE_TAGS.get(placeId);
     }
 
     /** Ruh hali seçilmemişken Türkçe modda çalan şarkının havasına göre ek kaynak. */

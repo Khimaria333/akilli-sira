@@ -59,6 +59,43 @@ public final class Scorer {
         return sourceBonus(c) + popularity(c);
     }
 
+    /** styleMatch'te "uyuyor" sayılacak alt sınır. */
+    public static final double STYLE_OK = 0.15;
+
+    /**
+     * Şarkı istenen türe ne kadar uyuyor: 0..1 (etiketlerle), 0 = uymuyor,
+     * -1 = bilinmiyor. Last.fm etiketi yoksa Deezer türüne bakar.
+     */
+    public static double styleMatch(Moods.Target t, Track c) {
+        if (t == null || !t.hasStyle()) return 1;
+        double ovA = LastFm.overlap(c.tags, t.style);
+        double ovT = LastFm.overlap(c.trackTags, t.style);
+        double ov = Math.max(ovA, ovT);
+        if (ov >= 0) return ov;
+        if (c.genreId > 0 && !t.styleDeezer.isEmpty()) return t.styleDeezer.contains((int) c.genreId) ? 0.6 : 0;
+        return -1;
+    }
+
+    /** İstenen türe kesinlikle uymayanları çıkarır (en az min şarkı kalıyorsa). */
+    public static List<Track> keepStyle(Moods.Target t, List<Track> list, int min) {
+        if (t == null || !t.hasStyle()) return list;
+        List<Track> ok = new ArrayList<>(), unknown = new ArrayList<>();
+        for (Track c : list) {
+            double m = styleMatch(t, c);
+            if (m >= STYLE_OK) ok.add(c);
+            else if (m < 0) unknown.add(c);
+        }
+        if (ok.size() >= min) {
+            // bilinmeyenler sona: ancak listeyi doldurmak için
+            List<Track> out = new ArrayList<>(ok);
+            out.addAll(unknown);
+            return out;
+        }
+        List<Track> out = new ArrayList<>(ok);
+        out.addAll(unknown);
+        return out.size() >= min ? out : list;
+    }
+
     public static List<Track> rank(Ctx x, Collection<Track> candidates) {
         Track seed = x.seed;
         double seedBpm = seed != null && seed.hasBpm() ? seed.bpm * (1 + 0.04 * x.mode) : 0;
@@ -123,6 +160,19 @@ public final class Scorer {
                 }
             }
 
+            // ---- İSTENEN TÜR (cümlede ya da Tür sekmesinde seçildi) ----
+            if (x.target != null && x.target.hasStyle()) {
+                double sm = styleMatch(x.target, c);
+                if (sm >= STYLE_OK) {
+                    k[C_STYLE] += 18 + 22 * Math.min(1, sm);
+                    if (x.target.styleLabel != null) why.add(x.target.styleLabel.replaceFirst("^\\S+\\s", "").toLowerCase(Locale.ROOT));
+                } else if (sm >= 0) {
+                    k[C_STYLE] -= sm > 0 ? 22 : 40;   // türü biliniyor ama istenen tür değil
+                } else {
+                    k[C_STYLE] -= 4;                  // tür bilinmiyor
+                }
+            }
+
             // ---- TEMPO ----
             double pSeed = Double.NaN, pRange = Double.NaN;
             if (seedBpm > 0 && c.hasBpm()) pSeed = closeness(bpmDistance(c.bpm, seedBpm));
@@ -162,7 +212,8 @@ public final class Scorer {
                     k[C_MOOD] += 25 * ov;
                     if (ov >= 0.3) why.add("ruh haline uygun");
                 } else if (ov == 0) {
-                    k[C_MOOD] -= 14;   // etiketleri biliniyor ama hiçbiri uymuyor
+                    // etiketleri biliniyor ama hiçbiri uymuyor (tür istenmişse türü zaten tutturdu, az ceza)
+                    k[C_MOOD] -= x.target.hasStyle() ? 5 : 14;
                 }
             }
 

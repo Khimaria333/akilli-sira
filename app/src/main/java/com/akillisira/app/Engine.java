@@ -937,8 +937,9 @@ public final class Engine {
 
         // Ek kaynak: önce çalan şarkının TÜRÜNE uygun Türkçe liste, sonra (varsa) ruh hali listeleri
         List<String> queries = new ArrayList<>();
-        if (turkish) queries.addAll(Scorer.genreQueries(s));
-        if (ctx.target != null) queries.addAll(ctx.target.queries);
+        if (ctx.target != null && ctx.target.hasStyle()) queries.addAll(ctx.target.queries);   // istenen tür önce
+        if (turkish) for (String q : Scorer.genreQueries(s)) if (!queries.contains(q)) queries.add(q);
+        if (ctx.target != null) for (String q : ctx.target.queries) if (!queries.contains(q)) queries.add(q);
         else if (turkish && queries.isEmpty()) queries.addAll(Moods.defaultTurkishQueries(s));
         int maxQ = (turkish && s.lang == Lang.FOREIGN) ? 3 : 2;
         for (int i = 0; i < queries.size() && i < maxQ; i++) {
@@ -953,10 +954,10 @@ public final class Engine {
         deezer.fillDetailsAll(list);
         deezer.fillGenresAll(list);      // tür ve çıkış yılı
         if (lastfm.enabled()) {
-            fillTags(list, ctx.target != null && !ctx.target.tags.isEmpty() ? 25 : 0);   // tarz + dil (+ruh hali)
+            fillTags(list, ctx.target != null && (!ctx.target.tags.isEmpty() || ctx.target.hasStyle()) ? 25 : 0);   // tarz + dil (+ruh hali)
             if (turkish) list = keepTurkish(list);
         }
-        return applyVariety(Scorer.rank(ctx, list), s.key());
+        return applyVariety(Scorer.keepStyle(ctx.target, Scorer.rank(ctx, list), 5), s.key());
     }
 
     // =====================================================================
@@ -1443,21 +1444,32 @@ public final class Engine {
                         }
                     }
                 } else {
-                    boolean useTags = lastfm.enabled() && !target.tags.isEmpty();
+                    boolean style = target.hasStyle();
+                    boolean useTags = lastfm.enabled() && (style || !target.tags.isEmpty());
                     int maxQ = 3;
                     for (int i = 0; i < target.queries.size() && i < maxQ; i++) {
                         pool.addAll(playlistPool(target.queries.get(i), turkish, 2, 40));
                     }
-                    // Last.fm: ruh hali / sahne etiketlerinin en çok dinlenen şarkıları
+                    // Last.fm: istenen türün / ruh hali etiketlerinin en çok dinlenen şarkıları
                     if (useTags) {
-                        List<String> tagList = new ArrayList<>(target.tags);
-                        if (turkish) {   // Türkçe modda önce "turkish ..." birleşik etiketleri dene
-                            List<String> trTags = new ArrayList<>();
-                            for (String tg : tagList) {
-                                if (!tg.contains("turk") && !tg.contains("türk") && !tg.contains("arabesk")
-                                        && !tg.contains("fasil") && !tg.contains("fantezi")) trTags.add("turkish " + tg);
+                        List<String> tagList = new ArrayList<>();
+                        if (style) {   // tür istendiyse sadece türün etiketleri (ruh hali etiketleri pop getirir)
+                            for (String tg : target.style) {
+                                boolean tr = tg.contains("turk") || tg.contains("türk") || tg.contains("arabesk")
+                                        || tg.contains("anadolu") || tg.contains("fantezi");
+                                if (turkish && !tr) tagList.add("turkish " + tg);
+                                else tagList.add(tg);
                             }
-                            tagList.addAll(0, trTags);
+                        } else {
+                            tagList.addAll(target.tags);
+                            if (turkish) {   // Türkçe modda önce "turkish ..." birleşik etiketleri dene
+                                List<String> trTags = new ArrayList<>();
+                                for (String tg : tagList) {
+                                    if (!tg.contains("turk") && !tg.contains("türk") && !tg.contains("arabesk")
+                                            && !tg.contains("fasil") && !tg.contains("fantezi")) trTags.add("turkish " + tg);
+                                }
+                                tagList.addAll(0, trTags);
+                            }
                         }
                         int used = 0;
                         for (String tg : tagList) {
@@ -1479,9 +1491,16 @@ public final class Engine {
                 // Yeterli aday yoksa genel listelerle tamamla (sıralamayı yine ruh hali etiketleri belirler)
                 if (pool.size() < 25 && favorites == null) {
                     stage(gen, "Daha fazla şarkı aranıyor…");
-                    String[] fb = turkish
-                            ? new String[]{"türkçe pop hit", "türkçe akustik", "türkçe slow", "türkçe hareketli"}
-                            : new String[]{"pop hits", "chill hits", "feel good hits"};
+                    String[] fb;
+                    if (target.hasStyle()) {   // tür istendiyse yedek de o türden
+                        List<String> sq = new ArrayList<>(target.styleQueries);
+                        for (String q : target.queries) if (!sq.contains(q)) sq.add(q);
+                        fb = sq.toArray(new String[0]);
+                    } else {
+                        fb = turkish
+                                ? new String[]{"türkçe pop hit", "türkçe akustik", "türkçe slow", "türkçe hareketli"}
+                                : new String[]{"pop hits", "chill hits", "feel good hits"};
+                    }
                     for (String q : fb) {
                         if (pool.size() >= 60) break;
                         pool.addAll(playlistPool(q, turkish, 1, 50));
@@ -1495,9 +1514,10 @@ public final class Engine {
                 list = preselect(list, 45);   // her seferinde biraz farklı olsun
                 stage(gen, "Tempo ve enerji analiz ediliyor…");
                 deezer.fillDetailsAll(list);
+                if (target != null && target.hasStyle()) deezer.fillGenresAll(list);   // tür kontrolü için
                 if (lastfm.enabled()) {
                     stage(gen, "Tarz etiketleri okunuyor…");
-                    boolean moodTags = target != null && !target.tags.isEmpty();
+                    boolean moodTags = target != null && (!target.tags.isEmpty() || target.hasStyle());
                     fillTags(list, moodTags ? 30 : 0);
                     if (turkish) list = keepTurkish(list);
                 }
@@ -1518,6 +1538,7 @@ public final class Engine {
                 List<Track> ranked = Scorer.rank(ctx, list);
                 for (Track t : ranked) t.score += rnd.nextDouble() * 8 - 4;
                 ranked.sort((x, y) -> Double.compare(y.score, x.score));
+                ranked = Scorer.keepStyle(target, ranked, 8);   // istenen türe uymayanları çıkar
 
                 List<Track> out;
                 double[] curve = null;
