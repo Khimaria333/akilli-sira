@@ -212,14 +212,14 @@ public final class Engine {
         if (sleepUntil > 0 || sleepFinishing) return -1;
         int h = hourNow();
         if (m == 0 && isNightCalm() && getVibe() == null && getMoodId() == null && getGenreId() == null
-                && (h >= 23 || h < 6)) return -1;
+                && Routines.active(app) == null && (h >= 23 || h < 6)) return -1;
         return m;
     }
 
     public boolean nightCalmActive() {
         int h = hourNow();
         return getMode() == 0 && isNightCalm() && getVibe() == null && getMoodId() == null && getGenreId() == null
-                && (h >= 23 || h < 6);
+                && Routines.active(app) == null && (h >= 23 || h < 6);
     }
 
     public int getSilentState() { return prefs.getInt("silent", SILENT_UNKNOWN); }
@@ -255,12 +255,24 @@ public final class Engine {
     }
 
     public Moods.Target sessionTarget() {
-        if (sessionExpired()) return null;
+        if (sessionExpired()) return routineTarget();
         Genres.Genre g = Genres.byId(getGenreId());
         if (g != null) return Genres.target(g);
         String v = getVibe();
         if (v != null) return Vibe.parse(v, hourNow()).target(isTurkish());
-        return Moods.target(Moods.mood(getMoodId()), Moods.place(getPlaceId()), isTurkish());
+        Moods.Target mt = Moods.target(Moods.mood(getMoodId()), Moods.place(getPlaceId()), isTurkish());
+        return mt != null ? mt : routineTarget();
+    }
+
+    /** Elle seçilmiş mod yokken geçerli rutin (otomatik ruh hali planı). */
+    private Moods.Target routineTarget() {
+        Routines.Routine r = Routines.active(app);
+        return r != null ? r.target(isTurkish()) : null;
+    }
+
+    public Routines.Routine activeRoutine() {
+        if (getVibe() != null || getMoodId() != null || getGenreId() != null) return null;
+        return Routines.active(app);
     }
 
     private static int hourNow() {
@@ -322,6 +334,8 @@ public final class Engine {
         lastRemainingMs = Long.MAX_VALUE;
 
         if (inSwitch) {
+            transFrom = seed;   // bir önceki şarkı (etiketleriyle)
+            transRated = false;
             boolean match = titlesMatch(title, transTarget.title);
             if (!match && transMethod == M_SILENT && !fallbackDone) {
                 // Sessiz yöntem işe yaramadı; YT Music kendi şarkısına geçti → bağlantıyla düzelt
@@ -354,6 +368,7 @@ public final class Engine {
         }
 
         // Kullanıcı kendisi bir şarkı açtı ya da geçti
+        transFrom = null;
         restoreVolumeNow();
         remember(key, artist, null);
         log("♪ " + artist + " – " + title);
@@ -809,6 +824,8 @@ public final class Engine {
         ctx.likedKeys = store.likedKeys();
         ctx.profile = profile();
         ctx.explore = getExplore();
+        ctx.badPairs = store.badPairs();
+        ctx.badArtistPairs = store.badArtistPairs();
         ctx.target = sessionTarget();
         ctx.recentArtists = new ArrayList<>(recentArtists);
         final boolean turkish = isTurkish();
@@ -1631,6 +1648,30 @@ public final class Engine {
     // =====================================================================
     // ❤️ Beğendim
     // =====================================================================
+
+    // ---- 👎 Kötü geçiş ----
+
+    private Track transFrom;
+    private boolean transRated;
+
+    /** Çalan şarkıya uygulamanın yaptığı bir geçişle gelindiyse, önceki şarkı. */
+    public Track lastTransitionFrom() {
+        return transRated || nowTitle == null ? null : transFrom;
+    }
+
+    /** "A'dan bu şarkıya geçiş kötüydü": bu tarz çiftinden ve sanatçı çiftinden kaçınmayı öğren. */
+    public void markBadTransition() {
+        Track from = transFrom;
+        if (from == null || nowTitle == null) return;
+        Track to = seed;
+        String sa = Scorer.styleSig(from);
+        String sb = to != null ? Scorer.styleSig(to) : null;
+        store.addBadTransition(sa, sb, Text.norm(Text.mainArtist(from.artist)), Text.norm(Text.mainArtist(nowArtist)));
+        transRated = true;
+        log("👎 Kötü geçiş: " + from.artist + " → " + nowArtist
+                + (sa != null && sb != null ? "  (" + sa + " → " + sb + " kaçınılacak)" : ""));
+        notifyChanged();
+    }
 
     public boolean isNowLiked() {
         return nowKey != null && store.isLiked(nowKey);

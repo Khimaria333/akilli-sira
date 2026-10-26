@@ -23,7 +23,8 @@ public class NowPage extends Page {
     private Views.ProgressLine progress;
     private Views.Icon playIcon;
     private LinearLayout notifBanner;
-    private TextView likeBtn;
+    private TextView likeBtn, transText;
+    private LinearLayout transRow;
     private int bgColor = Ui.BG;            // kapaktan gelen renk (koyulaştırılmış)
     private android.animation.ValueAnimator bgAnim;
     private String colorFor;
@@ -125,6 +126,22 @@ public class NowPage extends Page {
         hero.addView(ht, Ui.lpw(1));
         nowCard.addView(hero, full());
 
+        // Son geçişi değerlendir
+        transRow = Ui.hbox(a);
+        transRow.setBackground(Ui.round(a, Ui.SURFACE2, 14));
+        transRow.setPadding(Ui.dp(a, 12), Ui.dp(a, 8), Ui.dp(a, 6), Ui.dp(a, 8));
+        transText = Ui.oneLine(Ui.text(a, "", 12.5f, Ui.TEXT2, Ui.MEDIUM));
+        transRow.addView(transText, Ui.lpw(1));
+        TextView bad = Ui.text(a, "👎 Kötü geçiş", 12.5f, Ui.TEXT, Ui.BOLD);
+        bad.setPadding(Ui.dp(a, 10), Ui.dp(a, 6), Ui.dp(a, 10), Ui.dp(a, 6));
+        bad.setBackground(Ui.ripple(a, Ui.round(a, 0x22FFFFFF, 12), 12));
+        bad.setOnClickListener(v -> {
+            e.markBadTransition();
+            a.toast("Tamam, bu tür geçişlerden kaçınacağım");
+        });
+        transRow.addView(bad);
+        nowCard.addView(transRow, Ui.margins(full(), a, 0, 12, 0, 0));
+
         progress = new Views.ProgressLine(a);
         nowCard.addView(progress, Ui.margins(Ui.lp(Ui.MATCH, Ui.dp(a, 24)), a, 0, 10, 0, 0));
         LinearLayout times = Ui.hbox(a);
@@ -225,7 +242,14 @@ public class NowPage extends Page {
         TextView close = Ui.text(a, "Kapat", 13, Ui.TEXT2, Ui.BOLD);
         close.setPadding(Ui.dp(a, 12), Ui.dp(a, 6), Ui.dp(a, 12), Ui.dp(a, 6));
         close.setBackground(Ui.ripple(a, Ui.round(a, 0x22FFFFFF, 14), 14));
-        close.setOnClickListener(v -> e.clearSession());
+        close.setOnClickListener(v -> {
+            if (e.activeRoutine() != null) {
+                a.toast("Bu bir rutin; Ayarlar → Otomatik ruh hali planı'ndan kapatabilirsin");
+                a.showTab(MainActivity.TAB_SETTINGS);
+            } else {
+                e.clearSession();
+            }
+        });
         sessionCard.addView(close);
         body.addView(sessionCard, Ui.margins(full(), a, 0, 12, 0, 0));
 
@@ -267,6 +291,12 @@ public class NowPage extends Page {
         nt.addView(nextReason);
         nr.addView(nt, Ui.lpw(1));
         nextContent.addView(nr, full());
+        nr.setClickable(true);
+        nr.setOnClickListener(v -> Ui.showWhy(a, e.pick));
+        TextView whyLink = Ui.text(a, "ⓘ  Neden bu şarkı?", 12.5f, Ui.TEXT3, Ui.BOLD);
+        whyLink.setPadding(0, Ui.dp(a, 8), 0, 0);
+        whyLink.setOnClickListener(v -> Ui.showWhy(a, e.pick));
+        nextContent.addView(whyLink);
         nextCountdown = Ui.text(a, "", 13, Ui.TEXT2, Ui.MEDIUM);
         nextCountdown.setPadding(0, Ui.dp(a, 12), 0, Ui.dp(a, 12));
         nextContent.addView(nextCountdown);
@@ -444,6 +474,9 @@ public class NowPage extends Page {
         if (!has) return;
 
         // ---- Çalan ----
+        Track from = e.lastTransitionFrom();
+        transRow.setVisibility(from != null ? View.VISIBLE : View.GONE);
+        if (from != null) transText.setText("↪ " + from.artist + " – " + from.title + " ardından");
         heroTitle.setText(e.nowTitle);
         heroArtist.setText(e.nowArtist);
         Track s = e.seed;
@@ -537,6 +570,10 @@ public class NowPage extends Page {
                     e.choose(t);
                     a.toast("Sıradaki: " + t.title);
                     scroll.smoothScrollTo(0, nextSection.getTop());
+                });
+                r.setOnLongClickListener(v -> {
+                    Ui.showWhy(a, t);
+                    return true;
                 });
                 r.addView(ctrl("+", v -> {
                     e.addToQueue(t);

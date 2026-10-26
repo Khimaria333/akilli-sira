@@ -37,6 +37,22 @@ public final class Scorer {
         public java.util.Map<String, Integer> seedTags;   // çalan sanatçının Last.fm etiketleri
         public java.util.Map<String, Integer> profile;    // beğenilerden çıkan tarz profili
         public int explore = 1;                           // 0 tanıdık, 1 dengeli, 2 yeni
+        public java.util.Map<String, Integer> badPairs;   // "tarzA→tarzB" → kaç kez kötü işaretlendi
+        public Set<String> badArtistPairs;                // "sanatçıA→sanatçıB"
+    }
+
+    // Puan dökümü kategorileri ("Neden bu şarkı?" paneli)
+    static final int C_STYLE = 0, C_ERA = 1, C_TEMPO = 2, C_ENERGY = 3, C_MOOD = 4, C_SOURCE = 5, C_POP = 6,
+            C_LIKE = 7, C_PEN = 8;
+    public static final String[] CATS = {"Tarz", "Dönem", "Tempo", "Enerji", "Ruh hali", "Kaynak / denge",
+            "Popülerlik", "Beğenilerin", "Cezalar"};
+
+    /** Tarzın kısa imzası: en güçlü Last.fm etiketi (dil hariç), yoksa Deezer türü. */
+    public static String styleSig(Track t) {
+        if (t.tags != null) {
+            for (String tag : t.tags.keySet()) if (!LastFm.isLangTag(tag)) return tag;
+        }
+        return t.genre != null ? t.genre.toLowerCase(Locale.ROOT) : null;
     }
 
     public static double preScore(Track c) {
@@ -60,23 +76,23 @@ public final class Scorer {
             String a = Text.norm(Text.mainArtist(c.artist));
             if (x.strictArtist && seed != null && a.equals(seedArtist)) continue;
 
-            double s = 0;
+            double[] k = new double[CATS.length];
             List<String> why = new ArrayList<>();
 
             // ---- TARZ: sanatçı yakınlığı + tür ----
             if (seed != null) {
                 boolean rel = x.relatedArtists != null && c.artistId > 0 && x.relatedArtists.contains(c.artistId);
                 boolean rad = !rel && x.radioArtists != null && c.artistId > 0 && x.radioArtists.contains(c.artistId);
-                if (rel) { s += 20; why.add("benzer sanatçı"); }
-                else if (rad) { s += 14; why.add("aynı çevreden"); }
+                if (rel) { k[C_STYLE] += 20; why.add("benzer sanatçı"); }
+                else if (rad) { k[C_STYLE] += 14; why.add("aynı çevreden"); }
 
                 // Last.fm etiketleri varsa tarzı onlar belirler (Deezer türü kaba kalıyor)
                 double tagSim = LastFm.similarity(x.seedTags, c.tags);
                 boolean tagsKnown = tagSim >= 0;
                 double genreWeight = tagsKnown ? 0.35 : 1.0;
                 if (tagsKnown) {
-                    s += 30 * Math.min(1, tagSim * 1.5);
-                    if (tagSim < 0.08) s -= (rel || rad) ? 6 : 18;
+                    k[C_STYLE] += 30 * Math.min(1, tagSim * 1.5);
+                    if (tagSim < 0.08) k[C_STYLE] -= (rel || rad) ? 6 : 18;
                     else {
                         String sh = LastFm.sharedTag(x.seedTags, c.tags);
                         if (sh != null && tagSim >= 0.25) why.add("ortak tarz: " + sh);
@@ -85,25 +101,25 @@ public final class Scorer {
                 if (seed.genreId > 0 && c.genreId > 0) {
                     int g = genreRelation(seed, c);
                     if (g == 2) {
-                        s += 18 * genreWeight;
+                        k[C_STYLE] += 18 * genreWeight;
                         if (!tagsKnown) why.add(c.genre != null ? "aynı tür: " + c.genre : "aynı tür");
                     } else if (g == 1) {
-                        s += 7 * genreWeight;
+                        k[C_STYLE] += 7 * genreWeight;
                     } else {
-                        s -= ((rel || rad) ? 5 : 16) * genreWeight;   // benzer sanatçıysa Deezer türüne az takıl
+                        k[C_STYLE] -= ((rel || rad) ? 5 : 16) * genreWeight;   // benzer sanatçıysa Deezer türüne az takıl
                     }
                 } else if (!tagsKnown) {
-                    s += 4;   // tür bilinmiyor: tarafsız
+                    k[C_STYLE] += 4;   // tür bilinmiyor: tarafsız
                 }
 
                 // ---- DÖNEM ----
                 if (seed.year > 0 && c.year > 0) {
                     int d = Math.abs(seed.year - c.year);
-                    if (d <= 4) { s += 10; why.add("aynı dönem"); }
-                    else if (d <= 9) s += 6;
-                    else if (d >= 20) s -= 10;
+                    if (d <= 4) { k[C_ERA] += 10; why.add("aynı dönem"); }
+                    else if (d <= 9) k[C_ERA] += 6;
+                    else if (d >= 20) k[C_ERA] -= 10;
                 } else {
-                    s += 3;
+                    k[C_ERA] += 3;
                 }
             }
 
@@ -116,7 +132,7 @@ public final class Scorer {
             else if (!Double.isNaN(pSeed)) pBpm = pSeed;
             else if (!Double.isNaN(pRange)) pBpm = pRange;
             else pBpm = 0.35;
-            s += 25 * pBpm;
+            k[C_TEMPO] += 25 * pBpm;
             if (c.hasBpm() && pBpm >= 0.6) {
                 if (seed != null && seed.hasBpm()) {
                     String extra = "";
@@ -131,10 +147,10 @@ public final class Scorer {
             // ---- ENERJİ ----
             if (!Double.isNaN(gainTarget) && c.hasGain()) {
                 double p = Math.max(0, 1 - Math.abs(c.gain - gainTarget) / 6.0);
-                s += 15 * p;
+                k[C_ENERGY] += 15 * p;
                 if (p >= 0.7 && x.mode != 0) why.add(x.mode > 0 ? "daha enerjik" : "daha sakin");
             } else {
-                s += 15 * 0.4;
+                k[C_ENERGY] += 15 * 0.4;
             }
 
             // ---- Ruh hali / sahne etiketleri (Last.fm) ----
@@ -143,59 +159,76 @@ public final class Scorer {
                 double ovT = LastFm.overlap(c.trackTags, x.target.tags);
                 double ov = ovT >= 0 && ovA >= 0 ? 0.6 * ovT + 0.4 * ovA : ovT >= 0 ? ovT : ovA;
                 if (ov > 0) {
-                    s += 25 * ov;
+                    k[C_MOOD] += 25 * ov;
                     if (ov >= 0.3) why.add("ruh haline uygun");
                 } else if (ov == 0) {
-                    s -= 14;   // etiketleri biliniyor ama hiçbiri uymuyor
+                    k[C_MOOD] -= 14;   // etiketleri biliniyor ama hiçbiri uymuyor
                 }
             }
 
             // ---- Kaynak ----
-            if (c.sources.contains("plan")) { s += 20; why.add("senin listenden"); }
-            else if (c.sources.contains("mood") && x.target != null) { s += 8; why.add("ruh haline uygun"); }
-            else if (c.sources.contains("same")) s += 4;
-            if (seed == null) s += sourceBonus(c) * 0.5;   // Keşfet'te (çalan yokken) kaynak daha önemli
+            if (c.sources.contains("plan")) { k[C_SOURCE] += 20; why.add("senin listenden"); }
+            else if (c.sources.contains("mood") && x.target != null) { k[C_SOURCE] += 8; why.add("ruh haline uygun"); }
+            else if (c.sources.contains("same")) k[C_SOURCE] += 4;
+            if (seed == null) k[C_SOURCE] += sourceBonus(c) * 0.5;   // Keşfet'te (çalan yokken) kaynak daha önemli
 
             // ---- Popülerlik (keşif seviyesine göre) ----
             double pop = Math.min(1.0, c.rank / 800000.0);
-            if (x.explore == 0) s += 12 * pop;
-            else if (x.explore == 2) s += 8 * (1 - pop);
-            else s += 5 * pop;
+            if (x.explore == 0) k[C_POP] += 12 * pop;
+            else if (x.explore == 2) k[C_POP] += 8 * (1 - pop);
+            else k[C_POP] += 5 * pop;
 
             // ---- Tarz profili (❤️ beğenilerden) ----
             if (x.profile != null && !x.profile.isEmpty()) {
                 double ps = LastFm.similarity(x.profile, c.tags);
                 if (ps > 0) {
-                    s += 12 * Math.min(1, ps * 1.5);
+                    k[C_LIKE] += 12 * Math.min(1, ps * 1.5);
                     if (ps >= 0.35) why.add("tarzına uygun");
                 }
             }
 
             // ---- Global modda dil dengesi ----
             if (x.preferLang != Lang.UNKNOWN && c.lang == x.preferLang) {
-                s += 6;
+                k[C_SOURCE] += 6;
                 why.add(c.lang == Lang.TR ? "Türkçe ile dengele" : "yabancı ile dengele");
             }
 
             // ---- Beğeniler ve cezalar ----
-            if (seed != null && a.equals(seedArtist)) s -= 25;
-            else if (x.recentArtists != null && x.recentArtists.contains(a)) s -= 12;
-            if (c.durationSec > 0 && (c.durationSec < 90 || c.durationSec > 480)) s -= 15;
+            if (seed != null && a.equals(seedArtist)) k[C_PEN] -= 25;
+            else if (x.recentArtists != null && x.recentArtists.contains(a)) k[C_PEN] -= 12;
+            if (c.durationSec > 0 && (c.durationSec < 90 || c.durationSec > 480)) k[C_PEN] -= 15;
             if (x.likedKeys != null && x.likedKeys.contains(c.key())) {
-                s += 12;
+                k[C_LIKE] += 12;
                 why.add("❤️ beğendiğin");
             } else if (x.artistLikes != null) {
                 Integer n = x.artistLikes.get(a);
                 if (n != null && n > 0) {
-                    s += Math.min(15, 6 * n);
+                    k[C_LIKE] += Math.min(15, 6 * n);
                     why.add("❤️ sevdiğin sanatçı");
                 }
             }
+            // ---- 👎 ile işaretlenen kötü geçişlerden öğrenilen ----
+            if (seed != null) {
+                String sa = styleSig(seed), sc = styleSig(c);
+                if (x.badPairs != null && sa != null && sc != null) {
+                    Integer n = x.badPairs.get(sa + "→" + sc);
+                    if (n != null && n > 0) k[C_PEN] -= Math.min(30, 15 * n);
+                }
+                if (x.badArtistPairs != null && x.badArtistPairs.contains(seedArtist + "→" + a)) k[C_PEN] -= 25;
+            }
             if (x.artistDislikes != null) {
                 Integer n = x.artistDislikes.get(a);
-                if (n != null && n > 0) s -= Math.min(30, 12 * n);
+                if (n != null && n > 0) k[C_PEN] -= Math.min(30, 12 * n);
             }
 
+            double total = 0;
+            java.util.LinkedHashMap<String, Double> bd = new java.util.LinkedHashMap<>();
+            for (int i = 0; i < k.length; i++) {
+                total += k[i];
+                if (Math.abs(k[i]) >= 0.5) bd.put(CATS[i], k[i]);
+            }
+            c.breakdown = bd;
+            double s = total;
             c.score = s;
             c.reason = why.isEmpty() ? "tarzına yakın" : String.join(" · ", new java.util.LinkedHashSet<>(why));
             out.add(c);

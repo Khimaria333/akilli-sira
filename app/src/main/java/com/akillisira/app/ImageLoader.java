@@ -52,6 +52,16 @@ public final class ImageLoader {
         });
     }
 
+    /** Arka plan iş parçacığında: önbellekten ya da indirerek (bulamazsa null). */
+    public static Bitmap getSync(String url) {
+        if (url == null) return null;
+        Bitmap b = CACHE.get(url);
+        if (b != null) return b;
+        b = download(url);
+        if (b != null) CACHE.put(url, b);
+        return b;
+    }
+
     /** Önbellekte varsa döndürür, yoksa null. */
     public static Bitmap cached(String url) {
         return url == null ? null : CACHE.get(url);

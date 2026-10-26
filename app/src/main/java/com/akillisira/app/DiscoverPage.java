@@ -617,6 +617,11 @@ public class DiscoverPage extends Page {
             a.toast("Yeni bir liste hazırlanıyor");
         });
         btns.addView(again, Ui.margins(Ui.lp(Ui.dp(a, 52), Ui.dp(a, 52)), a, 10, 0, 0, 0));
+        TextView share = Ui.text(a, "📤", 18, Ui.TEXT, Ui.REGULAR);
+        share.setGravity(Gravity.CENTER);
+        share.setBackground(Ui.ripple(a, Ui.stroke(a, Ui.SURFACE2, Ui.STROKE, 26, 1), 26));
+        share.setOnClickListener(v -> ShareCard.shareList(a, e.discoverLabel, list));
+        btns.addView(share, Ui.margins(Ui.lp(Ui.dp(a, 52), Ui.dp(a, 52)), a, 10, 0, 0, 0));
         results.addView(btns, Ui.margins(full(), a, 0, 0, 0, 12));
 
         int i = 1;

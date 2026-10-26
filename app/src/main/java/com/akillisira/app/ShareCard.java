@@ -51,6 +51,128 @@ public final class ShareCard {
     }
 
     // =====================================================================
+    // Keşfet listesini paylaş
+    // =====================================================================
+
+    public static void shareList(Activity a, String label, List<Track> list) {
+        if (list == null || list.isEmpty()) return;
+        new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Listeyi paylaş")
+                .setItems(new String[]{"🖼  Görsel olarak (hikâye boyutu)", "🔗  YouTube Music linkleriyle metin"},
+                        (d, which) -> {
+                            android.widget.Toast.makeText(a, "Hazırlanıyor…", android.widget.Toast.LENGTH_SHORT).show();
+                            if (which == 0) shareListImage(a, label, list);
+                            else shareListText(a, label, list);
+                        })
+                .show();
+    }
+
+    private static void shareListText(Activity a, String label, List<Track> list) {
+        new Thread(() -> {
+            StringBuilder sb = new StringBuilder("🎧 " + label + "\n\n");
+            int n = 0;
+            for (Track t : list) {
+                if (n >= 20) break;
+                n++;
+                sb.append(n).append(". ").append(t.artist).append(" – ").append(t.title).append("\n");
+                String id = t.videoId != null ? t.videoId : YtMusic.findVideoId(t.artist, t.title);
+                if (id != null) {
+                    t.videoId = id;
+                    sb.append(YtMusic.watchUrl(id)).append("\n");
+                }
+            }
+            sb.append("\nAkıllı Sıra ile hazırlandı ✨");
+            a.runOnUiThread(() -> {
+                Intent i = new Intent(Intent.ACTION_SEND).setType("text/plain")
+                        .putExtra(Intent.EXTRA_TEXT, sb.toString());
+                a.startActivity(Intent.createChooser(i, "Listeyi paylaş"));
+            });
+        }).start();
+    }
+
+    private static void shareListImage(Activity a, String label, List<Track> list) {
+        new Thread(() -> {
+            try {
+                Bitmap bmp = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
+                Canvas c = new Canvas(bmp);
+                Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+                p.setShader(new LinearGradient(0, 0, 0, H, 0xFF120A22, 0xFF0B0B10, Shader.TileMode.CLAMP));
+                c.drawRect(0, 0, W, H, p);
+                glow(c, p, 900, 200, 600, 0x88FF4D6D);
+                glow(c, p, 100, 1500, 650, 0x667B5CFF);
+                p.setShader(null);
+                float x = 90;
+                Paint t = new Paint(Paint.ANTI_ALIAS_FLAG);
+                t.setColor(0xFFFF4D6D);
+                t.setTypeface(Ui.BOLD);
+                t.setTextSize(34);
+                t.setLetterSpacing(0.25f);
+                c.drawText("AKILLI SIRA · LİSTE", x, 170, t);
+                t.setLetterSpacing(0);
+                t.setColor(0xFFFFFFFF);
+                t.setTypeface(Ui.BLACK);
+                t.setTextSize(64);
+                c.drawText(fit(label.replace("  ·  ", " · "), t, W - 2 * x), x, 260, t);
+
+                float y = 340;
+                float size = 112;
+                Paint title = new Paint(Paint.ANTI_ALIAS_FLAG);
+                title.setColor(0xFFF4F4F8);
+                title.setTypeface(Ui.BOLD);
+                title.setTextSize(42);
+                Paint artist = new Paint(Paint.ANTI_ALIAS_FLAG);
+                artist.setColor(0xFFA3A3B5);
+                artist.setTypeface(Ui.MEDIUM);
+                artist.setTextSize(34);
+                Paint cov = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+                int n = Math.min(10, list.size());
+                for (int i = 0; i < n; i++) {
+                    Track tr = list.get(i);
+                    RectF r = new RectF(x, y, x + size, y + size);
+                    Bitmap cover = ImageLoader.getSync(tr.coverUrl);
+                    c.save();
+                    android.graphics.Path clip = new android.graphics.Path();
+                    clip.addRoundRect(r, 22, 22, android.graphics.Path.Direction.CW);
+                    c.clipPath(clip);
+                    if (cover != null) c.drawBitmap(cover, null, r, cov);
+                    else {
+                        Paint ph = new Paint();
+                        ph.setColor(0xFF2A2A3A);
+                        c.drawRect(r, ph);
+                    }
+                    c.restore();
+                    float tx = x + size + 36, maxW = W - tx - x;
+                    c.drawText(fit(tr.title, title, maxW), tx, y + 50, title);
+                    c.drawText(fit(tr.artist, artist, maxW), tx, y + 96, artist);
+                    y += size + streak(n);
+                }
+                Paint f = new Paint(Paint.ANTI_ALIAS_FLAG);
+                f.setColor(0xFF6E6E82);
+                f.setTypeface(Ui.MEDIUM);
+                f.setTextSize(32);
+                String foot = list.size() > n ? "+" + (list.size() - n) + " şarkı daha · Akıllı Sıra ✨" : "Akıllı Sıra ile hazırlandı ✨";
+                c.drawText(foot, (W - f.measureText(foot)) / 2f, H - 80, f);
+
+                Uri uri = save(a.getContentResolver(), bmp);
+                a.runOnUiThread(() -> {
+                    Intent i = new Intent(Intent.ACTION_SEND);
+                    i.setType("image/png");
+                    i.putExtra(Intent.EXTRA_STREAM, uri);
+                    i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    a.startActivity(Intent.createChooser(i, "Listeyi paylaş"));
+                });
+            } catch (Exception e) {
+                a.runOnUiThread(() -> android.widget.Toast.makeText(a, "Görsel oluşturulamadı: " + e.getMessage(),
+                        android.widget.Toast.LENGTH_LONG).show());
+            }
+        }).start();
+    }
+
+    private static float streak(int n) {
+        return n >= 10 ? 26 : 40;
+    }
+
+    // =====================================================================
 
     static Bitmap render(Store store) {
         // ---- Veriler ----

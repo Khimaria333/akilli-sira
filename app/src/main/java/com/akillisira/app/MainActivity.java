@@ -134,6 +134,19 @@ public class MainActivity extends Activity implements Engine.Listener {
         super.onResume();
         engine.addListener(this);
         engine.setUiVisible(true);
+        route();
+    }
+
+    /** Hangi ekran gösterilecek: tanıtım → kurulum → sekmeler. */
+    private void route() {
+        android.content.SharedPreferences sp = getSharedPreferences("ayarlar", MODE_PRIVATE);
+        if (!sp.getBoolean("introDone", setupDone)) {
+            nav.setVisibility(View.GONE);
+            if (intro == null) intro = new IntroPage(this, engine);
+            swap(intro);
+            currentTab = -1;
+            return;
+        }
         boolean ready = hasNotificationAccess() && canOverlay();
         if (!ready || !setupDone) {
             showSetup();
@@ -145,7 +158,10 @@ public class MainActivity extends Activity implements Engine.Listener {
             current.onShow();
             current.render();
         }
-        if (ready && setupDone) handleShortcut();
+        if (ready && setupDone) {
+            handleShortcut();
+            checkUpdate();
+        }
     }
 
     @Override
@@ -175,6 +191,20 @@ public class MainActivity extends Activity implements Engine.Listener {
         nav.setVisibility(View.GONE);
         swap(setup);
         currentTab = -1;
+    }
+
+    private Page intro;
+
+    public void finishIntro() {
+        getSharedPreferences("ayarlar", MODE_PRIVATE).edit().putBoolean("introDone", true).apply();
+        route();
+    }
+
+    /** Ayarlar'dan "Tanıtımı tekrar göster". */
+    public void replayIntro() {
+        getSharedPreferences("ayarlar", MODE_PRIVATE).edit().putBoolean("introDone", false).apply();
+        intro = null;
+        route();
     }
 
     public void finishSetup() {
@@ -381,6 +411,19 @@ public class MainActivity extends Activity implements Engine.Listener {
         if (res == null || res.isEmpty()) return;
         showTab(TAB_DISCOVER);
         ((DiscoverPage) tabs[TAB_DISCOVER]).onSpeech(res.get(0));
+    }
+
+    /** Yeni sürüm varsa (sürüm başına bir kez) sor. */
+    private void checkUpdate() {
+        Updater.check(this, false, () -> {
+            Updater.Release r = Updater.available;
+            android.content.SharedPreferences sp = getSharedPreferences("ayarlar", MODE_PRIVATE);
+            if (r != null && !r.tag.equals(sp.getString("updateShownTag", ""))) {
+                sp.edit().putString("updateShownTag", r.tag).apply();
+                Updater.showDialog(this);
+            }
+            if (current != null) current.render();
+        }, null);
     }
 
     /** Yedek dosyasını kaydet (kullanıcı yeri seçer). */

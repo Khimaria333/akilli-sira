@@ -31,6 +31,7 @@ public class Track {
     public boolean fromTurkishList;    // Türkçe sorgudan gelen çalma listesinde bulundu
 
     public double score;
+    public java.util.Map<String, Double> breakdown;   // kategori → puan ("Neden bu şarkı?")
     public String reason = "";
 
     public String key() {

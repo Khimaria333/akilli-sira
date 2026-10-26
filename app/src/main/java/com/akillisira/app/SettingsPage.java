@@ -16,7 +16,8 @@ public class SettingsPage extends Page {
 
     private Switch swAuto, swFade, swBack, swNotif, swNight, swCar;
     private TextView notifPermBtn;
-    private TextView lfmStatus, lfmRemove;
+    private TextView lfmStatus, lfmRemove, updText, verText, badInfo;
+    private LinearLayout updCard;
     private android.widget.EditText lfmInput;
     private Ui.Segmented exploreSeg2, wakeVolSeg;
     private Switch swWake;
@@ -35,6 +36,20 @@ public class SettingsPage extends Page {
     @Override
     protected void build() {
         body.addView(Ui.text(a, "Ayarlar", 28, Ui.TEXT, Ui.BLACK));
+
+        // ---- Güncelleme ----
+        updCard = Ui.hbox(a);
+        updCard.setBackground(Ui.gradient(a, 0x33FF4D6D, 0x337B5CFF, 18));
+        updCard.setPadding(Ui.dp(a, 16), Ui.dp(a, 14), Ui.dp(a, 10), Ui.dp(a, 14));
+        updText = Ui.text(a, "", 14, Ui.TEXT, Ui.MEDIUM);
+        updCard.addView(updText, Ui.lpw(1));
+        TextView updBtn = Ui.text(a, "Güncelle", 13.5f, 0xFFFFFFFF, Ui.BOLD);
+        updBtn.setGravity(android.view.Gravity.CENTER);
+        updBtn.setPadding(Ui.dp(a, 16), Ui.dp(a, 8), Ui.dp(a, 16), Ui.dp(a, 8));
+        updBtn.setBackground(Ui.ripple(a, Ui.gradient(a, Ui.ACCENT, Ui.ACCENT2, 16), 16));
+        updBtn.setOnClickListener(v -> Updater.showDialog(a));
+        updCard.addView(updBtn, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 10, 0, 0, 0));
+        body.addView(updCard, Ui.margins(full(), a, 0, 14, 0, 0));
 
         // ---- Last.fm ----
         body.addView(Ui.section(a, "Daha isabetli öneriler"));
@@ -211,7 +226,49 @@ public class SettingsPage extends Page {
         o.addView(exd);
         exploreSeg2 = Ui.segmented(a, new String[]{"Tanıdık", "Dengeli", "Yeni"}, e.getExplore(), e::setExplore);
         o.addView(exploreSeg2.view, full());
+        divider(o);
+        o.addView(Ui.text(a, "Öğrenilen kötü geçişler", 15, Ui.TEXT, Ui.BOLD));
+        badInfo = Ui.text(a, "", 13, Ui.TEXT2, Ui.REGULAR);
+        badInfo.setPadding(0, Ui.dp(a, 4), 0, 0);
+        o.addView(badInfo);
+        TextView clrBad = Ui.secondaryButton(a, "Sıfırla");
+        clrBad.setOnClickListener(v -> {
+            e.store.clearBadTransitions();
+            a.toast("Kötü geçiş kayıtları silindi");
+            render();
+        });
+        o.addView(clrBad, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 10, 0, 0));
         body.addView(o, full());
+
+        // ---- Otomatik ruh hali planı ----
+        body.addView(Ui.section(a, "Otomatik ruh hali planı"));
+        LinearLayout rc = Ui.card(a);
+        TextView rd = Ui.text(a, "Belirli gün ve saatlerde sıradaki şarkılar kendiliğinden o havaya geçsin. "
+                + "Elle seçtiğin bir mod varsa o önce gelir.", 13, Ui.TEXT2, Ui.REGULAR);
+        rd.setLineSpacing(0, 1.15f);
+        rc.addView(rd);
+        routineList = Ui.vbox(a);
+        rc.addView(routineList, Ui.margins(full(), a, 0, 6, 0, 0));
+        TextView addR = Ui.primaryButton(a, "＋  Rutin ekle");
+        addR.setOnClickListener(v -> RoutineDialog.show(a, this::refreshRoutines));
+        rc.addView(addR, Ui.margins(full(), a, 0, 12, 0, 0));
+        TextView tl = Ui.text(a, "Hazır şablonlar", 13, Ui.TEXT2, Ui.MEDIUM);
+        tl.setPadding(0, Ui.dp(a, 14), 0, Ui.dp(a, 8));
+        rc.addView(tl);
+        LinearLayout tpl = Ui.hbox(a);
+        for (int i = 0; i < Routines.TEMPLATE_NAMES.length; i++) {
+            final int idx = i;
+            TextView ch = Ui.chip(a, Routines.TEMPLATE_NAMES[i], false);
+            ch.setTextSize(12.5f);
+            ch.setOnClickListener(v -> {
+                Routines.add(a, Routines.template(idx));
+                a.toast("🗓 Eklendi: " + Routines.TEMPLATE_NAMES[idx]);
+                refreshRoutines();
+            });
+            tpl.addView(ch, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 0, 8, 0));
+        }
+        rc.addView(Ui.hscroll(a, tpl), full());
+        body.addView(rc, full());
 
         // ---- Müzikle uyan ----
         body.addView(Ui.section(a, "Müzikle uyan"));
@@ -289,6 +346,45 @@ public class SettingsPage extends Page {
         bk.addView(bb, Ui.margins(full(), a, 0, 12, 0, 0));
         body.addView(bk, full());
 
+        // ---- Sağlık kontrolü ----
+        body.addView(Ui.section(a, "Sağlık kontrolü"));
+        LinearLayout hc = Ui.card(a);
+        TextView hcd = Ui.text(a, "Müzik servisleri, izinler ve son hatalar tek bakışta. Bir şey ters gidince önce buraya bak.",
+                13, Ui.TEXT2, Ui.REGULAR);
+        hcd.setLineSpacing(0, 1.15f);
+        hc.addView(hcd);
+        healthList = Ui.vbox(a);
+        hc.addView(healthList, full());
+        TextView runHc = Ui.primaryButton(a, "🩺  Kontrol et");
+        runHc.setOnClickListener(v -> {
+            healthList.removeAllViews();
+            TextView wait = Ui.text(a, "Kontrol ediliyor…", 13, Ui.TEXT2, Ui.MEDIUM);
+            wait.setPadding(0, Ui.dp(a, 10), 0, 0);
+            healthList.addView(wait);
+            Diagnostics.run(a, e, items -> {
+                healthList.removeAllViews();
+                for (Diagnostics.Item it : items) {
+                    LinearLayout row = Ui.hbox(a);
+                    row.setGravity(android.view.Gravity.TOP);
+                    row.setPadding(0, Ui.dp(a, 10), 0, 0);
+                    String mark = it.ok ? "✓" : it.warnOnly ? "!" : "✕";
+                    int col = it.ok ? Ui.GOOD : it.warnOnly ? Ui.WARN : 0xFFFF6B6B;
+                    TextView m = Ui.text(a, mark, 15, col, Ui.BOLD);
+                    m.setGravity(android.view.Gravity.CENTER);
+                    row.addView(m, Ui.lp(Ui.dp(a, 22), Ui.WRAP));
+                    LinearLayout tt = Ui.vbox(a);
+                    tt.addView(Ui.text(a, it.title, 14, Ui.TEXT, Ui.BOLD));
+                    TextView d = Ui.text(a, it.detail, 12.5f, Ui.TEXT2, Ui.REGULAR);
+                    d.setLineSpacing(0, 1.1f);
+                    tt.addView(d);
+                    row.addView(tt, Ui.lpw(1));
+                    healthList.addView(row, full());
+                }
+            });
+        });
+        hc.addView(runHc, Ui.margins(full(), a, 0, 12, 0, 0));
+        body.addView(hc, full());
+
         // ---- İzinler ----
         body.addView(Ui.section(a, "İzinler"));
         LinearLayout p = Ui.card(a);
@@ -302,7 +398,18 @@ public class SettingsPage extends Page {
         // ---- Hakkında ----
         body.addView(Ui.section(a, "Hakkında"));
         LinearLayout h = Ui.card(a);
-        h.addView(Ui.text(a, "Akıllı Sıra " + a.versionName(), 15, Ui.TEXT, Ui.BOLD));
+        verText = Ui.text(a, "Akıllı Sıra " + a.versionName(), 15, Ui.TEXT, Ui.BOLD);
+        h.addView(verText);
+        TextView tour = Ui.secondaryButton(a, "Tanıtımı tekrar göster");
+        tour.setOnClickListener(v -> a.replayIntro());
+        h.addView(tour, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 10, 0, 0));
+        TextView chk = Ui.secondaryButton(a, "Güncellemeleri kontrol et");
+        chk.setOnClickListener(v -> {
+            a.toast("Kontrol ediliyor…");
+            Updater.check(a, true, () -> { Updater.showDialog(a); render(); },
+                    () -> a.toast("✓ En güncel sürümü kullanıyorsun"));
+        });
+        h.addView(chk, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 10, 0, 6));
         TextView hd = Ui.text(a, "Tempo (BPM) ve enerji verisi Deezer'den alınır, şarkılar YouTube Music'te çalınır. "
                 + "Bu kişisel bir uygulamadır; YouTube Music'in resmi bir parçası değildir.", 13, Ui.TEXT2, Ui.REGULAR);
         hd.setPadding(0, Ui.dp(a, 6), 0, 0);
@@ -391,6 +498,48 @@ public class SettingsPage extends Page {
         t.setClickable(!ok);
     }
 
+    private LinearLayout routineList, healthList;
+
+    private void refreshRoutines() {
+        routineList.removeAllViews();
+        List<Routines.Routine> list = Routines.all(a);
+        Routines.Routine active = e.activeRoutine();
+        if (list.isEmpty()) {
+            TextView none = Ui.text(a, "Henüz rutin yok.", 13, Ui.TEXT3, Ui.REGULAR);
+            none.setPadding(0, Ui.dp(a, 8), 0, 0);
+            routineList.addView(none);
+        }
+        for (Routines.Routine r : list) {
+            LinearLayout row = Ui.hbox(a);
+            row.setPadding(0, Ui.dp(a, 10), 0, Ui.dp(a, 2));
+            LinearLayout t = Ui.vbox(a);
+            boolean isActive = active != null && active.id.equals(r.id);
+            t.addView(Ui.oneLine(Ui.text(a, r.label() + (isActive ? "   ● şu an" : ""), 15, isActive ? Ui.GOOD : Ui.TEXT, Ui.BOLD)));
+            t.addView(Ui.oneLine(Ui.text(a, r.timeText(), 12.5f, Ui.TEXT2, Ui.REGULAR)));
+            row.addView(t, Ui.lpw(1));
+            Switch sw = new Switch(a);
+            int[][] st = {{android.R.attr.state_checked}, {}};
+            sw.setThumbTintList(new ColorStateList(st, new int[]{0xFFFFFFFF, 0xFFBDBDC8}));
+            sw.setTrackTintList(new ColorStateList(st, new int[]{Ui.ACCENT, 0x44FFFFFF}));
+            sw.setChecked(r.on);
+            sw.setOnCheckedChangeListener((b, on) -> {
+                Routines.setOn(a, r.id, on);
+                e.refresh();
+                refreshRoutines();
+            });
+            row.addView(sw);
+            TextView del = Ui.text(a, "✕", 15, Ui.TEXT3, Ui.BOLD);
+            del.setPadding(Ui.dp(a, 12), Ui.dp(a, 8), Ui.dp(a, 4), Ui.dp(a, 8));
+            del.setOnClickListener(v -> {
+                Routines.remove(a, r.id);
+                e.refresh();
+                refreshRoutines();
+            });
+            row.addView(del);
+            routineList.addView(row, full());
+        }
+    }
+
     private void saveWake(boolean on) {
         if (on && !WakeScheduler.exactAllowed(a)) {
             a.toast("Tam zamanlı alarm izni gerekiyor");
@@ -417,6 +566,7 @@ public class SettingsPage extends Page {
     @Override
     public void onShow() {
         exploreSeg2.select(e.getExplore());
+        refreshRoutines();
         swWake.setChecked(WakeScheduler.isOn(a));
         swAuto.setChecked(e.isAuto());
         swFade.setChecked(e.isFade());
@@ -430,6 +580,12 @@ public class SettingsPage extends Page {
 
     @Override
     public void render() {
+        int nb = e.store.badTransitionCount();
+        badInfo.setText(nb == 0 ? "Henüz yok. Şimdi Çalıyor ekranında bir geçiş kötü gelirse \"👎 Kötü geçiş\"e bas."
+                : nb + " kayıt: bu tarz ve sanatçı geçişlerinden kaçınılıyor.");
+        Updater.Release up = Updater.available;
+        updCard.setVisibility(up != null ? View.VISIBLE : View.GONE);
+        if (up != null) updText.setText("✨ Yeni sürüm hazır: " + up.tag);
         wakeTime.setText(String.format(java.util.Locale.ROOT, "%02d:%02d", WakeScheduler.hour(a), WakeScheduler.minute(a)));
         wakeTime.setAlpha(WakeScheduler.isOn(a) ? 1f : 0.45f);
         int dm = WakeScheduler.days(a);

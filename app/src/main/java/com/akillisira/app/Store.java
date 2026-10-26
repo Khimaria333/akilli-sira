@@ -39,6 +39,7 @@ public final class Store {
     private final File file;
     private final SharedPreferences dislikes;
     private final SharedPreferences likes;
+    private final SharedPreferences badTrans;
     private List<Play> plays;          // en yeni başta
     private volatile int version;
 
@@ -46,6 +47,7 @@ public final class Store {
         file = new File(c.getFilesDir(), "gecmis.jsonl");
         dislikes = c.getSharedPreferences("begenmedim", Context.MODE_PRIVATE);
         likes = c.getSharedPreferences("begendim", Context.MODE_PRIVATE);
+        badTrans = c.getSharedPreferences("kotugecis", Context.MODE_PRIVATE);
     }
 
     /** Ekranın ne zaman yeniden çizileceğini bilmesi için. */
@@ -276,6 +278,46 @@ public final class Store {
 
     private void undislikeQuiet(String key) {
         if (dislikes.contains(key)) dislikes.edit().remove(key).apply();
+    }
+
+    // =====================================================================
+    // 👎 Kötü geçişler: "tarzA→tarzB" sayaçları ve "sanatçıA→sanatçıB" çiftleri
+    // =====================================================================
+
+    public synchronized void addBadTransition(String sigA, String sigB, String artistA, String artistB) {
+        SharedPreferences.Editor ed = badTrans.edit();
+        if (sigA != null && sigB != null && !sigA.equals(sigB)) {
+            String k = "s:" + sigA + "→" + sigB;
+            ed.putInt(k, badTrans.getInt(k, 0) + 1);
+        }
+        ed.putInt("a:" + artistA + "→" + artistB, 1);
+        ed.apply();
+        version++;
+    }
+
+    public synchronized Map<String, Integer> badPairs() {
+        Map<String, Integer> out = new HashMap<>();
+        for (Map.Entry<String, ?> en : badTrans.getAll().entrySet()) {
+            if (en.getKey().startsWith("s:") && en.getValue() instanceof Integer) {
+                out.put(en.getKey().substring(2), (Integer) en.getValue());
+            }
+        }
+        return out;
+    }
+
+    public synchronized java.util.Set<String> badArtistPairs() {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (String k : badTrans.getAll().keySet()) if (k.startsWith("a:")) out.add(k.substring(2));
+        return out;
+    }
+
+    public synchronized int badTransitionCount() {
+        return badTrans.getAll().size();
+    }
+
+    public synchronized void clearBadTransitions() {
+        badTrans.edit().clear().apply();
+        version++;
     }
 
     // =====================================================================

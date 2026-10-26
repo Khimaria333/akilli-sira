@@ -273,6 +273,50 @@ public final class Ui {
         return iv;
     }
 
+    /** "Neden bu şarkı?" paneli: puanın kategorilere göre dökümü. */
+    public static void showWhy(android.app.Activity a, Track t) {
+        if (t == null) return;
+        LinearLayout box = vbox(a);
+        int p = dp(a, 20);
+        box.setPadding(p, dp(a, 8), p, dp(a, 4));
+        TextView head = oneLine(text(a, t.artist + " – " + t.title, 14, TEXT2, MEDIUM));
+        head.setPadding(0, 0, 0, dp(a, 12));
+        box.addView(head);
+        if (t.breakdown == null || t.breakdown.isEmpty()) {
+            box.addView(text(a, "Bu şarkı için ayrıntılı döküm yok.", 14, TEXT2, REGULAR));
+        } else {
+            double max = 1;
+            for (double v : t.breakdown.values()) max = Math.max(max, Math.abs(v));
+            for (java.util.Map.Entry<String, Double> en : t.breakdown.entrySet()) {
+                double v = en.getValue();
+                LinearLayout row = hbox(a);
+                row.addView(text(a, en.getKey(), 13.5f, TEXT, MEDIUM), lp(dp(a, 110), WRAP));
+                LinearLayout bar = hbox(a);
+                android.view.View fill = new android.view.View(a);
+                fill.setBackground(v >= 0 ? gradient(a, ACCENT, ACCENT2, 4) : round(a, WARN, 4));
+                float f = (float) Math.max(0.03, Math.abs(v) / max);
+                bar.addView(fill, new LinearLayout.LayoutParams(0, dp(a, 8), f));
+                bar.addView(new android.view.View(a), new LinearLayout.LayoutParams(0, dp(a, 8), Math.max(0.0001f, 1 - f)));
+                row.addView(bar, lpw(1));
+                TextView num = text(a, (v >= 0 ? "+" : "") + Math.round(v), 13, v >= 0 ? TEXT : WARN, BOLD);
+                num.setGravity(Gravity.END);
+                row.addView(num, lp(dp(a, 44), WRAP));
+                box.addView(row, margins(lp(MATCH, WRAP), a, 0, 0, 0, 10));
+            }
+            TextView total = text(a, "Toplam puan: " + Math.round(t.score), 14, TEXT, BOLD);
+            total.setPadding(0, dp(a, 6), 0, dp(a, 4));
+            box.addView(total);
+            TextView why = text(a, t.reason, 12.5f, ACCENT, MEDIUM);
+            why.setLineSpacing(0, 1.12f);
+            box.addView(why);
+        }
+        new android.app.AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Neden bu şarkı?")
+                .setView(box)
+                .setPositiveButton("Tamam", null)
+                .show();
+    }
+
     /** Şarkı satırı: kapak + ad + sanatçı + açıklama. */
     public static LinearLayout songRow(Context c, Track t, String sub, int index) {
         LinearLayout row = hbox(c);
