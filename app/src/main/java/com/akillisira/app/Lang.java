@@ -46,6 +46,7 @@ public final class Lang {
         String t = title == null ? "" : title;
         String a = artist == null ? "" : artist;
         if (hasAny(t, STRONG_TR) || hasAny(a, STRONG_TR)) return TR;
+        if (nonLatin(t) || nonLatin(a)) return FOREIGN;   // Yunan, Kiril, Arap, Asya alfabeleri
 
         int tr = 0, fo = 0;
         for (String w : Text.cleanTitle(t).toLowerCase(Locale.ROOT).split("[^\\p{L}']+")) {
@@ -74,6 +75,20 @@ public final class Lang {
 
     public static String label(int l) {
         return l == TR ? "Türkçe" : l == FOREIGN ? "Yabancı" : "—";
+    }
+
+    private static boolean nonLatin(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            Character.UnicodeBlock b = Character.UnicodeBlock.of(s.charAt(i));
+            if (b == Character.UnicodeBlock.GREEK || b == Character.UnicodeBlock.CYRILLIC
+                    || b == Character.UnicodeBlock.ARABIC || b == Character.UnicodeBlock.HEBREW
+                    || b == Character.UnicodeBlock.HANGUL_SYLLABLES || b == Character.UnicodeBlock.HIRAGANA
+                    || b == Character.UnicodeBlock.KATAKANA || b == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+                    || b == Character.UnicodeBlock.DEVANAGARI || b == Character.UnicodeBlock.THAI) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean hasAny(String s, String chars) {

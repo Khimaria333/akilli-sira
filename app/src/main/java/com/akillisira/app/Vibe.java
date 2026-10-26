@@ -65,7 +65,8 @@ public final class Vibe {
                 a("kamp ateşi türkçe", "türkçe akustik"), a("camping acoustic", "indie folk")),
         new Scene("meyhane", "Rakı masası", "🥂", "nostaljik", -0.02, -0.5,
                 a("rakı", "meyhane", "fasıl", "rakı masası"),
-                a("rakı masası şarkıları", "türk sanat müziği fasıl"), a("rakı masası şarkıları")),
+                a("rakı masası şarkıları", "türk sanat müziği", "fasıl", "arabesk"),
+                a("rakı masası şarkıları", "türk sanat müziği")),
         new Scene("arkadas", "Arkadaşlar", "🍻", "mutlu", 0.02, 0.5,
                 a("arkadaş", "kanka", "mangal", "muhabbet", "dostlar", "ekiple"),
                 a("arkadaşlarla türkçe şarkılar", "türkçe pop hit"), a("friends hangout", "feel good hits")),
@@ -73,6 +74,26 @@ public final class Vibe {
                 a("yemek", "akşam yemeği", "şarap", "restoran", "mum ışığı"),
                 a("akşam yemeği türkçe", "türkçe caz"), a("dinner jazz", "dinner party")),
     };
+
+    /** Sahnelerin Last.fm etiketleri. */
+    private static final Map<String, String[]> SCENE_TAGS = new LinkedHashMap<>();
+    /** Kendi başına tarif edici sahneler: tahmin edilen ruh halinin listeleri karışmasın. */
+    private static final java.util.Set<String> STRONG = new java.util.HashSet<>(java.util.Arrays.asList("meyhane"));
+    static {
+        SCENE_TAGS.put("sahil", a("summer", "chill", "beach", "acoustic"));
+        SCENE_TAGS.put("gunbatimi", a("chill", "sunset", "mellow", "acoustic"));
+        SCENE_TAGS.put("aksam", a("chill", "mellow"));
+        SCENE_TAGS.put("gece", a("night", "chill", "melancholic"));
+        SCENE_TAGS.put("sabah", a("happy", "morning", "acoustic"));
+        SCENE_TAGS.put("yagmur", a("melancholic", "sad", "rain", "acoustic"));
+        SCENE_TAGS.put("kahve", a("acoustic", "coffee", "chill", "jazz"));
+        SCENE_TAGS.put("yaz", a("summer", "dance", "party", "happy"));
+        SCENE_TAGS.put("kis", a("winter", "melancholic", "acoustic"));
+        SCENE_TAGS.put("doga", a("acoustic", "folk", "indie"));
+        SCENE_TAGS.put("meyhane", a("arabesk", "türk sanat müziği", "turkish classical", "fasil", "fantezi", "arabesque"));
+        SCENE_TAGS.put("arkadas", a("party", "happy", "dance"));
+        SCENE_TAGS.put("yemek", a("jazz", "lounge", "romantic", "chill"));
+    }
 
     // ----------------------------------------------------------------------
     // Ruh hali ve mekan anahtar kelimeleri (kökler)
@@ -123,24 +144,50 @@ public final class Vibe {
             return String.join("  ·  ", understood);
         }
 
+        String summaryScenes() {
+            List<String> l = new ArrayList<>();
+            for (Scene sc : scenes) l.add(sc.emoji + " " + sc.label);
+            Moods.Place p = Moods.place(placeId);
+            if (p != null) l.add(0, p.emoji + " " + p.label);
+            return String.join("  ·  ", l);
+        }
+
         /** Puanlamada kullanılacak hedef. */
         public Moods.Target target(boolean turkish) {
             Moods.Target t = Moods.target(Moods.mood(moodId), Moods.place(placeId), turkish);
             if (t == null) return null;
+            // Güçlü sahne (ör. rakı masası) + ruh hali açıkça söylenmemiş → sadece sahne belirler
+            boolean strong = false;
+            for (Scene sc : scenes) if (STRONG.contains(sc.id)) strong = true;
+            boolean sceneOnly = strong && guessedMood;
+
             double f = 1 + bpmShift;
             t.bpmLo *= f;
             t.bpmHi *= f;
             t.gain += gainShift;
-            List<String> q = new ArrayList<>();
-            for (int i = 0; i < scenes.size() && i < 2; i++) {
-                String[] sq = turkish ? scenes.get(i).qTr : scenes.get(i).qGl;
-                if (sq.length > 0) q.add(sq[0]);
+            if (sceneOnly) {   // fasıl/arabesk her tempoda olabilir
+                t.bpmLo = 60;
+                t.bpmHi = 135;
             }
-            // sahnenin ilk sorgusu + ruh halinin/mekanın sorguları
-            for (String s : t.queries) if (!q.contains(s)) q.add(s);
+
+            List<String> q = new ArrayList<>();
+            List<String> tg = new ArrayList<>();
+            for (int i = 0; i < scenes.size() && i < 2; i++) {
+                Scene sc = scenes.get(i);
+                String[] sq = turkish ? sc.qTr : sc.qGl;
+                for (int j = 0; j < sq.length && j < (sceneOnly ? 4 : 1); j++) if (!q.contains(sq[j])) q.add(sq[j]);
+                String[] st = SCENE_TAGS.get(sc.id);
+                if (st != null) for (String x : st) if (!tg.contains(x)) tg.add(x);
+            }
+            if (!sceneOnly) {
+                for (String s : t.queries) if (!q.contains(s)) q.add(s);
+                for (String s : t.tags) if (!tg.contains(s)) tg.add(s);
+            }
             t.queries.clear();
             t.queries.addAll(q);
-            t.label = summary();
+            t.tags.clear();
+            t.tags.addAll(tg);
+            t.label = sceneOnly ? summaryScenes() : summary();
             return t;
         }
     }

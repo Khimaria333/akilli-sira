@@ -14,6 +14,8 @@ public class SettingsPage extends Page {
 
     private Switch swAuto, swFade, swBack, swNotif, swNight, swCar;
     private TextView notifPermBtn;
+    private TextView lfmStatus, lfmRemove;
+    private android.widget.EditText lfmInput;
     private Ui.Segmented fadeSeg, langSeg, modeSeg;
     private TextView methodText, retrySilent;
     private TextView permNotif, permOverlay, permBattery;
@@ -27,6 +29,81 @@ public class SettingsPage extends Page {
     @Override
     protected void build() {
         body.addView(Ui.text(a, "Ayarlar", 28, Ui.TEXT, Ui.BLACK));
+
+        // ---- Last.fm ----
+        body.addView(Ui.section(a, "Daha isabetli öneriler"));
+        LinearLayout lf = Ui.card(a);
+        LinearLayout lfh = Ui.hbox(a);
+        lfh.addView(Ui.text(a, "Last.fm bağlantısı", 15, Ui.TEXT, Ui.BOLD), Ui.lpw(1));
+        lfmStatus = Ui.pill(a, "", Ui.TEXT3);
+        lfh.addView(lfmStatus);
+        lf.addView(lfh, full());
+        TextView lfd = Ui.text(a, "Last.fm, dinleyicilerin sanatçılara verdiği \"arabesk\", \"türk sanat müziği\", "
+                + "\"turkish rap\" gibi etiketleri sağlar. Bağlanınca sıradaki şarkı tarza göre çok daha isabetli seçilir, "
+                + "dil kesin anlaşılır ve \"rakı masası\" gibi sahneler gerçek fasıl/arabesk listeleri getirir.\n\n"
+                + "Anahtar almak (ücretsiz, 2 dk):\n"
+                + "1) Aşağıdaki düğmeyle Last.fm sayfasını aç, hesabın yoksa ücretsiz kaydol\n"
+                + "2) Formda Application name: Akıllı Sıra yaz, diğer alanları boş bırakabilirsin\n"
+                + "3) Submit'e bas, çıkan \"API key\" satırını kopyala ve buraya yapıştır",
+                13, Ui.TEXT2, Ui.REGULAR);
+        lfd.setPadding(0, Ui.dp(a, 6), 0, Ui.dp(a, 10));
+        lfd.setLineSpacing(0, 1.15f);
+        lf.addView(lfd);
+        TextView getKey = Ui.secondaryButton(a, "🔑  Last.fm'de anahtar al");
+        getKey.setOnClickListener(v -> {
+            try {
+                a.startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://www.last.fm/api/account/create")));
+            } catch (Exception ex) {
+                a.toast("Tarayıcı açılamadı");
+            }
+        });
+        lf.addView(getKey, full());
+        lfmInput = new android.widget.EditText(a);
+        lfmInput.setBackground(Ui.round(a, Ui.SURFACE2, 14));
+        lfmInput.setHint("API anahtarını buraya yapıştır");
+        lfmInput.setHintTextColor(Ui.TEXT3);
+        lfmInput.setTextColor(Ui.TEXT);
+        lfmInput.setTextSize(14);
+        lfmInput.setSingleLine(true);
+        lfmInput.setTypeface(Typeface.MONOSPACE);
+        int ip = Ui.dp(a, 12);
+        lfmInput.setPadding(ip, ip, ip, ip);
+        String cur = e.getLastFmKey();
+        if (cur != null) lfmInput.setText(cur);
+        lf.addView(lfmInput, Ui.margins(full(), a, 0, 10, 0, 0));
+        LinearLayout lfb = Ui.hbox(a);
+        TextView save = Ui.primaryButton(a, "Kaydet ve dene");
+        save.setOnClickListener(v -> {
+            String k = lfmInput.getText().toString().trim();
+            if (k.length() < 20) {
+                a.toast("Anahtar eksik görünüyor (32 karakter olmalı)");
+                return;
+            }
+            a.toast("Deneniyor…");
+            new Thread(() -> {
+                String err = LastFm.test(k);
+                a.runOnUiThread(() -> {
+                    if (err == null) {
+                        e.setLastFmKey(k);
+                        a.toast("✓ Last.fm bağlandı");
+                    } else {
+                        a.toast("Olmadı: " + err);
+                    }
+                    render();
+                });
+            }).start();
+        });
+        lfb.addView(save, Ui.lpw(1));
+        lfmRemove = Ui.secondaryButton(a, "Kaldır");
+        lfmRemove.setOnClickListener(v -> {
+            e.setLastFmKey(null);
+            lfmInput.setText("");
+            render();
+        });
+        lfb.addView(lfmRemove, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 10, 0, 0, 0));
+        lf.addView(lfb, Ui.margins(full(), a, 0, 10, 0, 0));
+        body.addView(lf, full());
 
         // ---- Geçiş ----
         body.addView(Ui.section(a, "Geçiş"));
@@ -226,6 +303,14 @@ public class SettingsPage extends Page {
 
     @Override
     public void render() {
+        boolean lfOn = e.lastfm.enabled();
+        String st = lfOn ? "✓ Bağlı" : "Bağlı değil";
+        if (!st.contentEquals(lfmStatus.getText())) {
+            lfmStatus.setText(st);
+            lfmStatus.setTextColor(lfOn ? Ui.GOOD : Ui.WARN);
+            lfmStatus.setBackground(Ui.round(a, ((lfOn ? Ui.GOOD : Ui.WARN) & 0x00FFFFFF) | 0x22000000, 12));
+        }
+        lfmRemove.setVisibility(lfOn ? View.VISIBLE : View.GONE);
         int s = e.getSilentState();
         methodText.setText(s == Engine.SILENT_YES
                 ? "Sessiz ✓  YouTube Music arka planda kalarak şarkı değiştiriyor."

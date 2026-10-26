@@ -63,6 +63,7 @@ public final class Engine {
     private final ExecutorService discoverWorker = Executors.newSingleThreadExecutor();
     private final ExecutorService net = Executors.newCachedThreadPool();
     private final Deezer deezer = new Deezer();
+    public final LastFm lastfm = new LastFm();
     private final SharedPreferences prefs;
     private final SharedPreferences pairs;   // şarkı → daha önce önerilenler (kalıcı)
     private final java.util.Random rnd = new java.util.Random();
@@ -132,6 +133,7 @@ public final class Engine {
     private Engine(Context app) {
         this.app = app;
         store = new Store(app);
+        lastfm.setKey(prefs.getString("lastfmKey", null));
         notifier = new Notifier(app);
         prefs = app.getSharedPreferences("ayarlar", Context.MODE_PRIVATE);
         pairs = app.getSharedPreferences("oneriler", Context.MODE_PRIVATE);
@@ -171,6 +173,19 @@ public final class Engine {
 
     public boolean isReturnToApp() { return prefs.getBoolean("returnToApp", true); }
     public void setReturnToApp(boolean on) { prefs.edit().putBoolean("returnToApp", on).apply(); notifyChanged(); }
+
+    public String getLastFmKey() { return prefs.getString("lastfmKey", null); }
+
+    public void setLastFmKey(String k) {
+        String v = k == null ? null : k.trim();
+        if (v != null && v.isEmpty()) v = null;
+        if (v == null) prefs.edit().remove("lastfmKey").apply();
+        else prefs.edit().putString("lastfmKey", v).apply();
+        lastfm.setKey(v);
+        log(v != null ? "Last.fm bağlandı: öneriler etiketlerle seçilecek" : "Last.fm anahtarı kaldırıldı");
+        refresh();
+        notifyChanged();
+    }
 
     public boolean isNotif() { return prefs.getBoolean("notif", true); }
     public void setNotif(boolean on) { prefs.edit().putBoolean("notif", on).apply(); notifyChanged(); }
@@ -867,6 +882,28 @@ public final class Engine {
             }
             pool.addAll(sample(safe(() -> deezer.artistTop(s.artistId, 12, "same")), 3));
         }
+        // Last.fm: daha isabetli benzer sanatçılar ve tarz etiketleri
+        if (lastfm.enabled()) {
+            s.tags = lastfm.artistTags(s.artist);
+            ctx.seedTags = s.tags;
+            int tl = LastFm.langFromTags(s.tags);
+            if (tl != Lang.UNKNOWN && s.lang == Lang.UNKNOWN) s.lang = tl;
+            List<String> sims = lastfm.similarArtists(s.artist, 25);
+            List<String> pickSims = sample(sims.subList(0, Math.min(15, sims.size())), 6);
+            for (String name : pickSims) {
+                String nn = Text.norm(Text.mainArtist(name));
+                List<Track> found = safe(() -> deezer.search("artist:\"" + name + "\"", 10));
+                List<Track> mine = new ArrayList<>();
+                for (Track t : found) {
+                    if (Text.norm(Text.mainArtist(t.artist)).equals(nn)) {
+                        t.sources.add("related");
+                        mine.add(t);
+                        if (t.artistId > 0) relSet.add(t.artistId);
+                    }
+                }
+                pool.addAll(sample(mine, 3));
+            }
+        }
         radioSet.remove(s.artistId);
         ctx.relatedArtists = relSet;
         ctx.radioArtists = radioSet;
@@ -888,6 +925,10 @@ public final class Engine {
         list = preselect(list, 40);
         deezer.fillDetailsAll(list);
         deezer.fillGenresAll(list);      // tür ve çıkış yılı
+        if (lastfm.enabled()) {
+            fillTags(list);              // tarz etiketleri + kesin dil
+            if (turkish) list = keepTurkish(list);
+        }
         return applyVariety(Scorer.rank(ctx, list), s.key());
     }
 
@@ -1011,10 +1052,33 @@ public final class Engine {
         }
     }
 
+    /** Last.fm etiketlerini doldurur ve dili etiketlere göre düzeltir. */
+    private void fillTags(List<Track> list) {
+        ExecutorService pool = Executors.newFixedThreadPool(3);
+        try {
+            List<java.util.concurrent.Future<?>> fs = new ArrayList<>();
+            for (Track t : list) {
+                fs.add(pool.submit(() -> {
+                    t.tags = lastfm.artistTags(t.artist);
+                    int l = LastFm.langFromTags(t.tags);
+                    // başlıkta ğ/ş/ı gibi kesin Türkçe harf yoksa etiket kazanır
+                    if (l != Lang.UNKNOWN && Lang.detect(t.title, t.artist) != Lang.TR) t.lang = l;
+                    else if (l == Lang.TR) t.lang = Lang.TR;
+                }));
+            }
+            for (java.util.concurrent.Future<?> f : fs) {
+                try { f.get(); } catch (Exception ignored) {}
+            }
+        } finally {
+            pool.shutdown();
+        }
+    }
+
     private static List<Track> keepTurkish(List<Track> list) {
         List<Track> out = new ArrayList<>();
         for (Track t : list) {
-            if (t.lang == Lang.TR || (t.lang == Lang.UNKNOWN && t.fromTurkishList)) out.add(t);
+            if (t.lang == Lang.TR) out.add(t);
+            else if (t.lang == Lang.UNKNOWN && t.fromTurkishList && (t.tags == null || t.tags.isEmpty())) out.add(t);
         }
         return out;
     }
@@ -1135,8 +1199,36 @@ public final class Engine {
                         }
                     }
                 } else {
-                    for (int i = 0; i < target.queries.size() && i < 3; i++) {
+                    boolean useTags = lastfm.enabled() && !target.tags.isEmpty();
+                    int maxQ = useTags ? 2 : 3;
+                    for (int i = 0; i < target.queries.size() && i < maxQ; i++) {
                         pool.addAll(playlistPool(target.queries.get(i), turkish, 2, 40));
+                    }
+                    // Last.fm: ruh hali / sahne etiketlerinin en çok dinlenen şarkıları
+                    if (useTags) {
+                        List<String> tagList = new ArrayList<>(target.tags);
+                        if (turkish) {   // Türkçe modda önce "turkish ..." birleşik etiketleri dene
+                            List<String> trTags = new ArrayList<>();
+                            for (String tg : tagList) {
+                                if (!tg.contains("turk") && !tg.contains("türk") && !tg.contains("arabesk")
+                                        && !tg.contains("fasil") && !tg.contains("fantezi")) trTags.add("turkish " + tg);
+                            }
+                            tagList.addAll(0, trTags);
+                        }
+                        int used = 0;
+                        for (String tg : tagList) {
+                            if (used >= 3) break;
+                            List<String[]> top = lastfm.tagTopTracks(tg, 60);
+                            if (top.size() < 10) continue;
+                            used++;
+                            for (String[] at : sample(top, 12)) {
+                                List<Track> hit = safe(() -> deezer.search("artist:\"" + at[0] + "\" track:\"" + at[1] + "\"", 1));
+                                for (Track h : hit) {
+                                    h.sources.add("mood");
+                                    pool.add(h);
+                                }
+                            }
+                        }
                     }
                 }
                 if (pool.isEmpty()) throw new Exception("Deezer'den liste alınamadı");
@@ -1145,6 +1237,10 @@ public final class Engine {
                 if (turkish) list = keepTurkish(list);
                 list = preselect(list, 45);   // her seferinde biraz farklı olsun
                 deezer.fillDetailsAll(list);
+                if (lastfm.enabled()) {
+                    fillTags(list);
+                    if (turkish) list = keepTurkish(list);
+                }
 
                 Scorer.Ctx ctx = new Scorer.Ctx();
                 ctx.target = target;

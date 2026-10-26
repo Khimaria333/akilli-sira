@@ -39,6 +39,7 @@ public final class Moods {
     public static final class Target {
         public double bpmLo, bpmHi, gain;
         public final List<String> queries = new ArrayList<>();
+        public final List<String> tags = new ArrayList<>();   // Last.fm'de aranacak / eşleşecek etiketler
         public String label = "";
     }
 
@@ -73,6 +74,25 @@ public final class Moods {
         new Place("uyku", "Uyumadan önce", "😴", a("türkçe uyku öncesi"), a("sleep songs")),
     };
 
+    /** Last.fm etiketleri (İngilizce etiketler daha yaygın). */
+    private static final java.util.Map<String, String[]> MOOD_TAGS = new java.util.HashMap<>();
+    private static final java.util.Map<String, String[]> PLACE_TAGS = new java.util.HashMap<>();
+    static {
+        MOOD_TAGS.put("mutlu", a("happy", "upbeat", "feel good", "dance"));
+        MOOD_TAGS.put("enerjik", a("energetic", "dance", "party", "upbeat"));
+        MOOD_TAGS.put("sakin", a("chill", "mellow", "calm", "acoustic"));
+        MOOD_TAGS.put("huzunlu", a("sad", "melancholic", "melancholy", "ballad"));
+        MOOD_TAGS.put("romantik", a("romantic", "love songs", "ballad"));
+        MOOD_TAGS.put("odak", a("instrumental", "lofi", "ambient", "chill"));
+        MOOD_TAGS.put("nostaljik", a("90s", "80s", "70s", "oldies", "nostalgia"));
+        MOOD_TAGS.put("asi", a("rock", "alternative", "metal", "anatolian rock"));
+        PLACE_TAGS.put("spor", a("workout", "energetic"));
+        PLACE_TAGS.put("parti", a("party", "dance"));
+        PLACE_TAGS.put("araba", a("road trip", "driving"));
+        PLACE_TAGS.put("uyku", a("sleep", "calm"));
+        PLACE_TAGS.put("is", a("instrumental", "chill"));
+    }
+
     public static Mood mood(String id) {
         if (id == null) return null;
         for (Mood m : MOODS) if (m.id.equals(id)) return m;
@@ -106,6 +126,8 @@ public final class Moods {
             for (String q : turkish ? p.qTr : p.qGlobal) t.queries.add(q);
         }
         for (String q : turkish ? m.qTr : m.qGlobal) t.queries.add(q);
+        if (p != null && PLACE_TAGS.containsKey(p.id)) for (String g : PLACE_TAGS.get(p.id)) t.tags.add(g);
+        if (MOOD_TAGS.containsKey(m.id)) for (String g : MOOD_TAGS.get(m.id)) t.tags.add(g);
         t.label = m.emoji + " " + m.label + (p != null ? "  ·  " + p.emoji + " " + p.label : "");
         return t;
     }

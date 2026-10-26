@@ -34,6 +34,7 @@ public final class Scorer {
         public java.util.Set<String> likedKeys;               // beğenilen şarkılar
         public Set<Long> relatedArtists;   // çalan sanatçının benzerleri (Deezer)
         public Set<Long> radioArtists;     // çalan sanatçının radyosunda geçen sanatçılar
+        public java.util.Map<String, Integer> seedTags;   // çalan sanatçının Last.fm etiketleri
     }
 
     public static double preScore(Track c) {
@@ -67,17 +68,29 @@ public final class Scorer {
                 if (rel) { s += 20; why.add("benzer sanatçı"); }
                 else if (rad) { s += 14; why.add("aynı çevreden"); }
 
+                // Last.fm etiketleri varsa tarzı onlar belirler (Deezer türü kaba kalıyor)
+                double tagSim = LastFm.similarity(x.seedTags, c.tags);
+                boolean tagsKnown = tagSim >= 0;
+                double genreWeight = tagsKnown ? 0.35 : 1.0;
+                if (tagsKnown) {
+                    s += 30 * Math.min(1, tagSim * 1.5);
+                    if (tagSim < 0.08) s -= (rel || rad) ? 6 : 18;
+                    else {
+                        String sh = LastFm.sharedTag(x.seedTags, c.tags);
+                        if (sh != null && tagSim >= 0.25) why.add("ortak tarz: " + sh);
+                    }
+                }
                 if (seed.genreId > 0 && c.genreId > 0) {
                     int g = genreRelation(seed, c);
                     if (g == 2) {
-                        s += 18;
-                        why.add(c.genre != null ? "aynı tür: " + c.genre : "aynı tür");
+                        s += 18 * genreWeight;
+                        if (!tagsKnown) why.add(c.genre != null ? "aynı tür: " + c.genre : "aynı tür");
                     } else if (g == 1) {
-                        s += 7;
+                        s += 7 * genreWeight;
                     } else {
-                        s -= (rel || rad) ? 5 : 16;   // benzer sanatçıysa Deezer türüne az takıl
+                        s -= ((rel || rad) ? 5 : 16) * genreWeight;   // benzer sanatçıysa Deezer türüne az takıl
                     }
-                } else {
+                } else if (!tagsKnown) {
                     s += 4;   // tür bilinmiyor: tarafsız
                 }
 
@@ -122,6 +135,17 @@ public final class Scorer {
                 s += 15 * 0.4;
             }
 
+            // ---- Ruh hali / sahne etiketleri (Last.fm) ----
+            if (x.target != null && !x.target.tags.isEmpty()) {
+                double ov = LastFm.overlap(c.tags, x.target.tags);
+                if (ov > 0) {
+                    s += 25 * ov;
+                    if (ov >= 0.3) why.add("ruh haline uygun");
+                } else if (ov == 0) {
+                    s -= 14;   // etiketleri biliniyor ama hiçbiri uymuyor
+                }
+            }
+
             // ---- Kaynak ----
             if (c.sources.contains("plan")) { s += 20; why.add("senin listenden"); }
             else if (c.sources.contains("mood") && x.target != null) { s += 8; why.add("ruh haline uygun"); }
@@ -157,7 +181,7 @@ public final class Scorer {
             }
 
             c.score = s;
-            c.reason = why.isEmpty() ? "tarzına yakın" : String.join(" · ", why);
+            c.reason = why.isEmpty() ? "tarzına yakın" : String.join(" · ", new java.util.LinkedHashSet<>(why));
             out.add(c);
         }
         out.sort((p, q) -> Double.compare(q.score, p.score));
