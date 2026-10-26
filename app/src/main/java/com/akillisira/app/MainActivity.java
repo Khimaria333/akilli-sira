@@ -8,6 +8,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.speech.RecognizerIntent;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
@@ -16,10 +17,13 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
+
 /** Tek aktivite: kurulum ya da alt menülü üç sekme (Keşfet / Şimdi / Ayarlar). */
 public class MainActivity extends Activity implements Engine.Listener {
 
     public static final int TAB_DISCOVER = 0, TAB_NOW = 1, TAB_SETTINGS = 2;
+    private static final int REQ_SPEECH = 42;
 
     private Engine engine;
     private FrameLayout container;
@@ -210,6 +214,29 @@ public class MainActivity extends Activity implements Engine.Listener {
         } catch (Exception ex) {
             return false;
         }
+    }
+
+    /** Sesle anlat: Android'in konuşma tanıma ekranını Türkçe açar. */
+    public void startSpeech() {
+        Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "tr-TR");
+        i.putExtra(RecognizerIntent.EXTRA_PROMPT, "Nasıl hissediyorsun, neredesin?");
+        try {
+            startActivityForResult(i, REQ_SPEECH);
+        } catch (Exception ex) {
+            toast("Bu telefonda sesle yazma bulunamadı");
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_SPEECH || resultCode != RESULT_OK || data == null) return;
+        ArrayList<String> res = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+        if (res == null || res.isEmpty()) return;
+        showTab(TAB_DISCOVER);
+        ((DiscoverPage) tabs[TAB_DISCOVER]).onSpeech(res.get(0));
     }
 
     public void toast(String msg) {

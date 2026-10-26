@@ -162,8 +162,16 @@ public final class Engine {
     public String getMoodId() { return prefs.getString("mood", null); }
     public String getPlaceId() { return prefs.getString("place", null); }
 
+    public String getVibe() { return prefs.getString("vibe", null); }
+
     public Moods.Target sessionTarget() {
+        String v = getVibe();
+        if (v != null) return Vibe.parse(v, hourNow()).target(isTurkish());
         return Moods.target(Moods.mood(getMoodId()), Moods.place(getPlaceId()), isTurkish());
+    }
+
+    private static int hourNow() {
+        return java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
     }
 
     public void setSession(String moodId, String placeId) {
@@ -172,7 +180,7 @@ public final class Engine {
     }
 
     public void clearSession() {
-        prefs.edit().remove("mood").remove("place").apply();
+        prefs.edit().remove("mood").remove("place").remove("vibe").apply();
         plan = new ArrayList<>();
         log("Ruh hali modu kapatıldı");
         if (nowKey != null) recompute();
@@ -652,9 +660,23 @@ public final class Engine {
     public void discover(String moodId, String placeId) {
         Moods.Mood m = Moods.mood(moodId);
         if (m == null) return;
+        prefs.edit().remove("vibe").apply();
         setSession(moodId, placeId);
         final boolean turkish = isTurkish();
-        final Moods.Target target = Moods.target(m, Moods.place(placeId), turkish);
+        runDiscover(Moods.target(m, Moods.place(placeId), turkish), turkish);
+    }
+
+    /** Serbest cümleden ("akşamüstü sahilde sakin bir şeyler") öneri listesi. */
+    public Vibe.Result discoverText(String text) {
+        Vibe.Result r = Vibe.parse(text, hourNow());
+        prefs.edit().putString("vibe", text).putString("mood", r.moodId).putString("place", r.placeId).apply();
+        final boolean turkish = isTurkish();
+        log("Anlaşılan: " + r.summary());
+        runDiscover(r.target(turkish), turkish);
+        return r;
+    }
+
+    private void runDiscover(Moods.Target target, boolean turkish) {
         final Set<String> hist = new HashSet<>(history);
         final int gen = ++discoverGeneration;
         discoverLoading = true;

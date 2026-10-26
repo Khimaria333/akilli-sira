@@ -18,7 +18,7 @@ public final class Views {
     // =====================================================================
     public static final class Icon extends View {
         public static final int DISCOVER = 0, NOW = 1, SETTINGS = 2, CHECK = 3, NEXT = 4, BELL = 5,
-                LAYERS = 6, BATTERY = 7, REFRESH = 8, MUSIC = 9;
+                LAYERS = 6, BATTERY = 7, REFRESH = 8, MUSIC = 9, MIC = 10;
 
         private final int type;
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -161,6 +161,17 @@ public final class Views {
                     path.lineTo(cx + 9 * u, cy - 10 * u);
                     path.lineTo(cx + 9 * u, cy + 3 * u);
                     cv.drawPath(path, p);
+                    break;
+                }
+                case MIC: {
+                    p.setStyle(Paint.Style.FILL);
+                    r.set(cx - 3.5f * u, cy - 10 * u, cx + 3.5f * u, cy + 2 * u);
+                    cv.drawRoundRect(r, 3.5f * u, 3.5f * u, p);
+                    p.setStyle(Paint.Style.STROKE);
+                    r.set(cx - 7 * u, cy - 9 * u, cx + 7 * u, cy + 5 * u);
+                    cv.drawArc(r, 0, 180, false, p);
+                    cv.drawLine(cx, cy + 5 * u, cx, cy + 9.5f * u, p);
+                    cv.drawLine(cx - 4 * u, cy + 9.5f * u, cx + 4 * u, cy + 9.5f * u, p);
                     break;
                 }
                 default: break;

@@ -2,7 +2,14 @@ package com.akillisira.app;
 
 import android.content.res.ColorStateList;
 import android.graphics.drawable.GradientDrawable;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.View;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -23,6 +30,8 @@ public class DiscoverPage extends Page {
     private List<Track> renderedResults;
     private boolean renderedLoading;
     private String renderedProblem;
+    private EditText input;
+    private TextView preview;
 
     public DiscoverPage(MainActivity a, Engine e) {
         super(a, e);
@@ -39,8 +48,77 @@ public class DiscoverPage extends Page {
         h.setPadding(0, Ui.dp(a, 4), 0, 0);
         body.addView(h);
 
+        // ---- Kendi cümlenle anlat ----
+        body.addView(Ui.section(a, "Kendi cümlenle anlat"));
+        LinearLayout ask = Ui.card(a);
+        input = new EditText(a);
+        input.setBackground(Ui.round(a, Ui.SURFACE2, 16));
+        input.setTextColor(Ui.TEXT);
+        input.setHintTextColor(Ui.TEXT3);
+        input.setHint("örn. akşamüstü sahilde sakin bir şeyler");
+        input.setTextSize(15);
+        input.setTypeface(Ui.REGULAR);
+        int ip = Ui.dp(a, 14);
+        input.setPadding(ip, ip, ip, ip);
+        input.setMaxLines(3);
+        input.setRawInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        input.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        input.setOnEditorActionListener((v, id, ev) -> {
+            if (id == EditorInfo.IME_ACTION_DONE) { submitText(); return true; }
+            return false;
+        });
+        input.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence c, int st, int co, int af) {}
+            @Override public void onTextChanged(CharSequence c, int st, int b, int co) {}
+            @Override public void afterTextChanged(Editable ed) { updatePreview(); }
+        });
+        String prev = e.getVibe();
+        if (prev != null) input.setText(prev);
+        ask.addView(input, full());
+
+        preview = Ui.text(a, "", 13, Ui.ACCENT, Ui.MEDIUM);
+        preview.setPadding(Ui.dp(a, 4), Ui.dp(a, 10), 0, 0);
+        preview.setLineSpacing(0, 1.15f);
+        ask.addView(preview);
+
+        LinearLayout askRow = Ui.hbox(a);
+        LinearLayout mic = Ui.vbox(a);
+        mic.setGravity(Gravity.CENTER);
+        mic.setBackground(Ui.ripple(a, Ui.stroke(a, Ui.SURFACE2, Ui.STROKE, 26, 1), 26));
+        mic.setClickable(true);
+        mic.addView(new Views.Icon(a, Views.Icon.MIC, Ui.TEXT), Ui.lp(Ui.dp(a, 24), Ui.dp(a, 24)));
+        mic.setOnClickListener(v -> a.startSpeech());
+        askRow.addView(mic, Ui.margins(Ui.lp(Ui.dp(a, 52), Ui.dp(a, 52)), a, 0, 0, 10, 0));
+        TextView understand = Ui.primaryButton(a, "Anla ve hazırla");
+        understand.setOnClickListener(v -> submitText());
+        askRow.addView(understand, Ui.lpw(1));
+        ask.addView(askRow, Ui.margins(full(), a, 0, 12, 0, 0));
+        body.addView(ask, full());
+
+        LinearLayout ex = Ui.hbox(a);
+        String[][] examples = {
+            {"🏖️ Akşamüstü sahil", "akşamüstü sahilde sakin bir şeyler"},
+            {"🏋️ Sporda gaz", "sporda gaz şarkılar lazım"},
+            {"🌧️ Yağmur ve hüzün", "yağmurlu bir gün, biraz hüzünlüyüm"},
+            {"🍷 Akşam yemeği", "sevgilimle akşam yemeği"},
+            {"🥂 Rakı masası", "rakı masası"},
+            {"🚗 Gece yolculuğu", "gece arabada yolculuk"},
+            {"📚 Ders", "ders çalışıyorum, odaklanmam lazım"},
+        };
+        for (String[] exm : examples) {
+            TextView ch = Ui.chip(a, exm[0], false);
+            ch.setTextSize(13);
+            ch.setOnClickListener(v -> {
+                input.setText(exm[1]);
+                input.setSelection(exm[1].length());
+                submitText();
+            });
+            ex.addView(ch, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 0, 8, 0));
+        }
+        body.addView(Ui.hscroll(a, ex), Ui.margins(full(), a, 0, 12, 0, 0));
+
         // ---- Ruh hali kutucukları (2 sütun) ----
-        body.addView(Ui.section(a, "Ruh halin"));
+        body.addView(Ui.section(a, "Ya da ruh halini seç"));
         LinearLayout row = null;
         for (int i = 0; i < Moods.MOODS.length; i++) {
             Moods.Mood m = Moods.MOODS[i];
@@ -110,6 +188,43 @@ public class DiscoverPage extends Page {
         paintMoods();
         paintPlaces();
         updateGo();
+        updatePreview();
+    }
+
+    private void updatePreview() {
+        String t = input.getText().toString().trim();
+        if (t.isEmpty()) {
+            preview.setVisibility(View.GONE);
+            return;
+        }
+        Vibe.Result r = Vibe.parse(t, Calendar.getInstance().get(Calendar.HOUR_OF_DAY));
+        preview.setVisibility(View.VISIBLE);
+        preview.setText("Anladığım: " + r.summary() + (r.guessedMood ? "\n(ruh halini cümleden tahmin ettim)" : ""));
+    }
+
+    private void submitText() {
+        String t = input.getText().toString().trim();
+        if (t.isEmpty()) {
+            a.toast("Bir şeyler yaz ya da mikrofona söyle");
+            return;
+        }
+        InputMethodManager imm = a.getSystemService(InputMethodManager.class);
+        if (imm != null) imm.hideSoftInputFromWindow(input.getWindowToken(), 0);
+        input.clearFocus();
+        Vibe.Result r = e.discoverText(t);
+        moodId = r.moodId;
+        placeId = r.placeId;
+        paintMoods();
+        paintPlaces();
+        updateGo();
+        scroll.postDelayed(() -> scroll.smoothScrollTo(0, results.getTop() - Ui.dp(a, 12)), 150);
+    }
+
+    /** Mikrofondan gelen cümle. */
+    public void onSpeech(String text) {
+        input.setText(text);
+        input.setSelection(text.length());
+        submitText();
     }
 
     private void paintMoods() {
