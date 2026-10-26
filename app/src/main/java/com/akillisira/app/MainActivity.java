@@ -22,7 +22,9 @@ import java.util.ArrayList;
 /** Tek aktivite: kurulum ya da alt menülü üç sekme (Keşfet / Şimdi / Ayarlar). */
 public class MainActivity extends Activity implements Engine.Listener {
 
-    public static final int TAB_DISCOVER = 0, TAB_NOW = 1, TAB_SETTINGS = 2;
+    public static final int TAB_DISCOVER = 0, TAB_NOW = 1, TAB_HISTORY = 2, TAB_SETTINGS = 3;
+    private static final int TABS = 4;
+    private static final int REQ_NOTIF = 43;
     private static final int REQ_SPEECH = 42;
 
     private Engine engine;
@@ -32,9 +34,9 @@ public class MainActivity extends Activity implements Engine.Listener {
     private Page[] tabs;
     private Page current;
     private int currentTab = -1;
-    private final LinearLayout[] navItems = new LinearLayout[3];
-    private final Views.Icon[] navIcons = new Views.Icon[3];
-    private final TextView[] navLabels = new TextView[3];
+    private final LinearLayout[] navItems = new LinearLayout[TABS];
+    private final Views.Icon[] navIcons = new Views.Icon[TABS];
+    private final TextView[] navLabels = new TextView[TABS];
     private boolean setupDone;
 
     @Override
@@ -46,7 +48,8 @@ public class MainActivity extends Activity implements Engine.Listener {
         w.setNavigationBarColor(Ui.SURFACE);
 
         setup = new SetupPage(this, engine);
-        tabs = new Page[]{new DiscoverPage(this, engine), new NowPage(this, engine), new SettingsPage(this, engine)};
+        tabs = new Page[]{new DiscoverPage(this, engine), new NowPage(this, engine),
+                new HistoryPage(this, engine), new SettingsPage(this, engine)};
 
         LinearLayout root = Ui.vbox(this);
         root.setBackgroundColor(Ui.BG);
@@ -114,7 +117,7 @@ public class MainActivity extends Activity implements Engine.Listener {
         nav.setVisibility(View.VISIBLE);
         currentTab = tab;
         swap(tabs[tab]);
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < TABS; i++) {
             boolean on = i == tab;
             navIcons[i].setColor(on ? Ui.TEXT : Ui.TEXT3);
             navLabels[i].setTextColor(on ? Ui.TEXT : Ui.TEXT3);
@@ -142,9 +145,9 @@ public class MainActivity extends Activity implements Engine.Listener {
         LinearLayout n = Ui.hbox(this);
         n.setBackgroundColor(Ui.SURFACE);
         n.setPadding(Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 10));
-        String[] labels = {"Keşfet", "Şimdi", "Ayarlar"};
-        int[] icons = {Views.Icon.DISCOVER, Views.Icon.NOW, Views.Icon.SETTINGS};
-        for (int i = 0; i < 3; i++) {
+        String[] labels = {"Keşfet", "Şimdi", "Geçmiş", "Ayarlar"};
+        int[] icons = {Views.Icon.DISCOVER, Views.Icon.NOW, Views.Icon.HISTORY, Views.Icon.SETTINGS};
+        for (int i = 0; i < TABS; i++) {
             final int idx = i;
             LinearLayout item = Ui.vbox(this);
             item.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -199,6 +202,32 @@ public class MainActivity extends Activity implements Engine.Listener {
 
     public void openAppDetails() {
         safeStart(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
+    }
+
+    public boolean notificationsAllowed() {
+        return engine.notifAllowed();
+    }
+
+    /** Android 13+ bildirim izni; daha eskilerde bildirim ayarlarını açar. */
+    public void requestNotifications() {
+        if (android.os.Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIF);
+        } else {
+            Intent i = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+            safeStart(i);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_NOTIF) {
+            if (current != null) current.render();
+            engine.refreshNotification();
+        }
     }
 
     public void openYtMusic() {

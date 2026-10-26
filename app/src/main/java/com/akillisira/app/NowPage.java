@@ -1,5 +1,6 @@
 package com.akillisira.app;
 
+import android.app.AlertDialog;
 import android.content.res.ColorStateList;
 import android.view.Gravity;
 import android.view.View;
@@ -11,31 +12,31 @@ import android.widget.TextView;
 import java.util.List;
 import java.util.Locale;
 
-/** Şu an çalan şarkı, sıradaki ve sonrası. */
+/** Şu an çalan şarkı, sıradaki, kuyruk ve öneriler. */
 public class NowPage extends Page {
 
     private TextView statusPill;
-    private LinearLayout empty, nowCard, sessionCard, nextSection;
+    private LinearLayout empty, nowCard, sessionCard, contextRow, nextSection;
     private ImageView heroCover;
     private TextView heroTitle, heroArtist, heroBpm, heroLang, timeLeft, timeRight;
     private TextView tempoValue, energyValue;
     private Views.ProgressLine progress;
     private Views.Meter meter;
-    private TextView sessionLabel;
+    private TextView sessionLabel, sleepChip, nightPill, carPill;
 
-    private LinearLayout nextBody;
     private ImageView nextCover;
-    private TextView nextTitle, nextArtist, nextReason, nextCountdown, nextStatus;
+    private TextView nextBadge, nextTitle, nextArtist, nextReason, nextCountdown, nextStatus;
     private LinearLayout nextContent, nextLoading;
     private ProgressBar nextSpinner;
     private TextView skipBtn;
 
     private Ui.Segmented modeSeg, langSeg;
-    private LinearLayout altList;
-    private TextView altHeader;
+    private LinearLayout queueBox, queueList, altList;
+    private TextView queueHeader, altHeader;
 
     private Track renderedSeed, renderedPick;
     private List<Track> renderedAlts;
+    private int renderedQueueVersion = -1;
 
     public NowPage(MainActivity a, Engine e) {
         super(a, e);
@@ -82,13 +83,21 @@ public class NowPage extends Page {
         heroCover = Ui.cover(a, 18);
         hero.addView(heroCover, Ui.margins(Ui.lp(Ui.dp(a, 112), Ui.dp(a, 112)), a, 0, 0, 14, 0));
         LinearLayout ht = Ui.vbox(a);
+        LinearLayout nowRow = Ui.hbox(a);
         TextView now = Ui.text(a, "ŞU AN", 11, Ui.ACCENT, Ui.BOLD);
         now.setLetterSpacing(0.12f);
-        ht.addView(now);
+        nowRow.addView(now, Ui.lpw(1));
+        TextView dislikeNow = smallRound("👎");
+        dislikeNow.setOnClickListener(v -> {
+            e.dislikeNow();
+            a.toast("Bir daha önerilmeyecek, geçiliyor");
+        });
+        nowRow.addView(dislikeNow, Ui.lp(Ui.dp(a, 34), Ui.dp(a, 34)));
+        ht.addView(nowRow, full());
         heroTitle = Ui.text(a, "", 19, Ui.TEXT, Ui.BOLD);
         heroTitle.setMaxLines(2);
         heroTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        heroTitle.setPadding(0, Ui.dp(a, 4), 0, Ui.dp(a, 2));
+        heroTitle.setPadding(0, Ui.dp(a, 2), 0, Ui.dp(a, 2));
         ht.addView(heroTitle);
         heroArtist = Ui.oneLine(Ui.text(a, "", 14, Ui.TEXT2, Ui.REGULAR));
         ht.addView(heroArtist);
@@ -130,6 +139,18 @@ public class NowPage extends Page {
         nowCard.addView(stats, Ui.margins(full(), a, 0, 14, 0, 0));
         body.addView(nowCard, full());
 
+        // ---- Bağlam: uyku, gece, araba ----
+        contextRow = Ui.hbox(a);
+        sleepChip = Ui.chip(a, "😴  Uyku zamanlayıcı", false);
+        sleepChip.setTextSize(13);
+        sleepChip.setOnClickListener(v -> sleepDialog());
+        contextRow.addView(sleepChip, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 0, 8, 0));
+        nightPill = Ui.pill(a, "🌙 Gece: sakin", Ui.ACCENT2);
+        contextRow.addView(nightPill, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 0, 8, 0));
+        carPill = Ui.pill(a, "🚗 Arabada", Ui.GOOD);
+        contextRow.addView(carPill);
+        body.addView(Ui.hscroll(a, contextRow), Ui.margins(full(), a, 0, 12, 0, 0));
+
         // ---- Ruh hali oturumu ----
         sessionCard = Ui.hbox(a);
         sessionCard.setBackground(Ui.gradient(a, 0x33FF4D6D, 0x337B5CFF, 18));
@@ -150,7 +171,7 @@ public class NowPage extends Page {
         border.setBackground(Ui.gradient(a, Ui.ACCENT, Ui.ACCENT2, 24));
         int bw = Ui.dp(a, 1.5f);
         border.setPadding(bw, bw, bw, bw);
-        nextBody = Ui.vbox(a);
+        LinearLayout nextBody = Ui.vbox(a);
         nextBody.setBackground(Ui.round(a, Ui.SURFACE, 23));
         nextBody.setPadding(Ui.dp(a, 14), Ui.dp(a, 14), Ui.dp(a, 14), Ui.dp(a, 14));
         border.addView(nextBody, full());
@@ -164,6 +185,10 @@ public class NowPage extends Page {
         nextBody.addView(nextLoading, full());
 
         nextContent = Ui.vbox(a);
+        nextBadge = Ui.text(a, "", 10.5f, Ui.TEXT3, Ui.BOLD);
+        nextBadge.setLetterSpacing(0.1f);
+        nextBadge.setPadding(0, 0, 0, Ui.dp(a, 8));
+        nextContent.addView(nextBadge);
         LinearLayout nr = Ui.hbox(a);
         nextCover = Ui.cover(a, 14);
         nr.addView(nextCover, Ui.margins(Ui.lp(Ui.dp(a, 66), Ui.dp(a, 66)), a, 0, 0, 12, 0));
@@ -187,16 +212,41 @@ public class NowPage extends Page {
             a.toast("Geçiliyor…");
         });
         btns.addView(skipBtn, Ui.lpw(1));
+        TextView dislikeNext = Ui.secondaryButton(a, "👎");
+        dislikeNext.setTextSize(18);
+        dislikeNext.setPadding(0, 0, 0, 0);
+        dislikeNext.setOnClickListener(v -> {
+            e.dislikeNext();
+            a.toast("Bir daha önerilmeyecek");
+        });
+        btns.addView(dislikeNext, Ui.margins(Ui.lp(Ui.dp(a, 52), Ui.dp(a, 52)), a, 10, 0, 0, 0));
         LinearLayout refresh = Ui.vbox(a);
         refresh.setGravity(Gravity.CENTER);
         refresh.setBackground(Ui.ripple(a, Ui.stroke(a, Ui.SURFACE2, Ui.STROKE, 26, 1), 26));
         refresh.setClickable(true);
         refresh.addView(new Views.Icon(a, Views.Icon.REFRESH, Ui.TEXT), Ui.lp(Ui.dp(a, 22), Ui.dp(a, 22)));
-        refresh.setOnClickListener(v -> e.refresh());
+        refresh.setOnClickListener(v -> {
+            e.refresh();
+            a.toast("Yeni öneriler hazırlanıyor");
+        });
         btns.addView(refresh, Ui.margins(Ui.lp(Ui.dp(a, 52), Ui.dp(a, 52)), a, 10, 0, 0, 0));
         nextContent.addView(btns, full());
         nextBody.addView(nextContent, full());
         nextSection.addView(border, full());
+
+        // ---- Kuyruk ----
+        queueBox = Ui.vbox(a);
+        LinearLayout qh = Ui.hbox(a);
+        queueHeader = Ui.section(a, "Sıran");
+        qh.addView(queueHeader, Ui.lpw(1));
+        TextView clearQ = Ui.text(a, "Temizle", 13, Ui.TEXT2, Ui.BOLD);
+        clearQ.setPadding(Ui.dp(a, 10), Ui.dp(a, 24), Ui.dp(a, 4), Ui.dp(a, 8));
+        clearQ.setOnClickListener(v -> e.clearQueue());
+        qh.addView(clearQ);
+        queueBox.addView(qh, full());
+        queueList = Ui.vbox(a);
+        queueBox.addView(queueList, full());
+        nextSection.addView(queueBox, full());
 
         // ---- Hava ve dil ----
         nextSection.addView(Ui.section(a, "Hava"));
@@ -208,12 +258,20 @@ public class NowPage extends Page {
                 i -> e.setTurkish(i == 0));
         nextSection.addView(langSeg.view, full());
 
-        // ---- Alternatifler ----
-        altHeader = Ui.section(a, "Sonra çalabilecekler");
+        // ---- Öneriler ----
+        altHeader = Ui.section(a, "Önerilen · dokun: sıradaki yap  ·  +: sıraya ekle");
         nextSection.addView(altHeader);
         altList = Ui.vbox(a);
         nextSection.addView(altList, full());
         body.addView(nextSection, full());
+    }
+
+    private TextView smallRound(String label) {
+        TextView t = Ui.text(a, label, 15, Ui.TEXT, Ui.REGULAR);
+        t.setGravity(Gravity.CENTER);
+        t.setBackground(Ui.ripple(a, Ui.round(a, Ui.SURFACE2, 17), 17));
+        t.setClickable(true);
+        return t;
     }
 
     private LinearLayout statTile(String label) {
@@ -225,6 +283,18 @@ public class NowPage extends Page {
         l.setPadding(0, 0, 0, Ui.dp(a, 6));
         t.addView(l);
         return t;
+    }
+
+    private void sleepDialog() {
+        String[] items = {"15 dakika", "30 dakika", "45 dakika", "1 saat", "1,5 saat", "Kapat"};
+        int[] mins = {15, 30, 45, 60, 90, 0};
+        new AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("😴 Uyku zamanlayıcı")
+                .setItems(items, (d, which) -> {
+                    e.setSleep(mins[which]);
+                    if (mins[which] > 0) a.toast("Süre dolunca çalan şarkı bitince müzik duracak");
+                })
+                .show();
     }
 
     @Override
@@ -240,18 +310,26 @@ public class NowPage extends Page {
         nowCard.setVisibility(has ? View.VISIBLE : View.GONE);
         nextSection.setVisibility(has ? View.VISIBLE : View.GONE);
 
-        // durum etiketi
-        if (e.controller == null) {
-            setPill(statusPill, "●  Bağlı değil", Ui.TEXT3);
-        } else if (!e.isAuto()) {
-            setPill(statusPill, "●  Manuel", Ui.WARN);
-        } else {
-            setPill(statusPill, "●  Otomatik", Ui.GOOD);
-        }
+        if (e.controller == null) setPill(statusPill, "●  Bağlı değil", Ui.TEXT3);
+        else if (!e.isAuto()) setPill(statusPill, "●  Manuel", Ui.WARN);
+        else setPill(statusPill, "●  Otomatik", Ui.GOOD);
 
         Moods.Target tg = e.sessionTarget();
         sessionCard.setVisibility(has && tg != null ? View.VISIBLE : View.GONE);
         if (tg != null) sessionLabel.setText("🎯  " + tg.label);
+
+        // bağlam satırı
+        long sl = e.sleepRemainingMs();
+        boolean sleepOn = sl >= 0;
+        String sleepTxt = !sleepOn ? "😴  Uyku zamanlayıcı"
+                : sl == 0 ? "😴  Bu şarkıdan sonra duracak" : "😴  " + Math.max(1, (sl + 59999) / 60000) + " dk sonra duracak";
+        if (!sleepTxt.contentEquals(sleepChip.getText())) {
+            sleepChip.setText(sleepTxt);
+            Ui.setChip(a, sleepChip, sleepOn);
+        }
+        nightPill.setVisibility(e.nightCalmActive() ? View.VISIBLE : View.GONE);
+        carPill.setVisibility(e.isCarActive() ? View.VISIBLE : View.GONE);
+        contextRow.setVisibility(has ? View.VISIBLE : View.GONE);
 
         if (!has) return;
 
@@ -282,7 +360,7 @@ public class NowPage extends Page {
 
         // ---- Sıradaki ----
         Track p = e.pick;
-        if (e.computing || p == null) {
+        if (p == null) {
             nextLoading.setVisibility(View.VISIBLE);
             nextContent.setVisibility(View.GONE);
             nextSpinner.setVisibility(e.computing ? View.VISIBLE : View.GONE);
@@ -297,22 +375,44 @@ public class NowPage extends Page {
                 nextContent.setAlpha(0f);
                 nextContent.animate().alpha(1f).setDuration(250).start();
             }
+            nextBadge.setText(e.pickFromQueue() ? "SIRANDAN" : "OTOMATİK SEÇİM");
             nextTitle.setText(p.title);
             nextArtist.setText(p.artist + (p.lang != Lang.UNKNOWN ? "  ·  " + Lang.label(p.lang) : ""));
-            nextReason.setText(p.reason);
+            nextReason.setText(p.reason.isEmpty() ? (e.pickFromQueue() ? "senin seçtiğin" : "") : p.reason);
             long ms = e.msToSwitch();
             String cd;
-            if (!e.isAuto()) cd = "Otomatik geçiş kapalı · \"Şimdi geç\" ile elle geçebilirsin";
+            if (e.sleepFinishing) cd = "😴 Uyku zamanı: bu şarkı bitince müzik duracak";
+            else if (!e.isAuto()) cd = "Otomatik geçiş kapalı · \"Şimdi geç\" ile elle geçebilirsin";
             else if (ms < 0) cd = "Şarkı bitince geçecek";
             else if (ms <= 60000) cd = "⏱  " + Math.max(1, (ms + 999) / 1000) + " sn sonra geçiş"
                     + (e.isFade() ? " · ses yumuşakça kısılacak" : "");
             else cd = "Şarkı bitince geçecek · " + time(ms) + " kaldı";
             if (p.videoId == null) cd += "\nYouTube Music'te aranıyor…";
             nextCountdown.setText(cd);
-            Ui.setEnabledLook(skipBtn, true);
         }
 
-        // ---- Alternatifler ----
+        // ---- Kuyruk (sıradakinden sonrakiler) ----
+        if (renderedQueueVersion != e.queueVersion) {
+            renderedQueueVersion = e.queueVersion;
+            queueList.removeAllViews();
+            int n = e.queue.size();
+            boolean showQ = n > 1 || (n == 1 && !e.pickFromQueue());
+            queueBox.setVisibility(showQ ? View.VISIBLE : View.GONE);
+            queueHeader.setText(("Sıran · " + n + " şarkı").toUpperCase(Locale.forLanguageTag("tr")));
+            int start = e.pickFromQueue() ? 1 : 0;
+            for (int i = start; i < n; i++) {
+                final int idx = i;
+                Track t = e.queue.get(i);
+                LinearLayout r = Ui.songRow(a, t, t.hasBpm() ? Math.round(t.bpm) + " BPM" : null, i + 2 - start);
+                if (t.hasBpm()) r.removeViewAt(r.getChildCount() - 1);   // yer açmak için BPM sütununu kaldır
+                r.addView(ctrl("▲", v -> e.moveInQueue(idx, -1), idx > start));
+                r.addView(ctrl("▼", v -> e.moveInQueue(idx, 1), idx < n - 1));
+                r.addView(ctrl("✕", v -> e.removeFromQueue(idx), true));
+                queueList.addView(r, Ui.margins(full(), a, 0, 0, 0, 8));
+            }
+        }
+
+        // ---- Öneriler ----
         if (renderedAlts != e.alternatives) {
             renderedAlts = e.alternatives;
             altList.removeAllViews();
@@ -324,9 +424,26 @@ public class NowPage extends Page {
                     a.toast("Sıradaki: " + t.title);
                     scroll.smoothScrollTo(0, nextSection.getTop());
                 });
+                r.addView(ctrl("+", v -> {
+                    e.addToQueue(t);
+                    a.toast("Sıraya eklendi: " + t.title);
+                }, true));
                 altList.addView(r, Ui.margins(full(), a, 0, 0, 0, 8));
             }
         }
+    }
+
+    /** Satır sonundaki küçük kontrol düğmesi. */
+    private TextView ctrl(String label, View.OnClickListener l, boolean enabled) {
+        TextView t = Ui.text(a, label, 15, Ui.TEXT, Ui.BOLD);
+        t.setGravity(Gravity.CENTER);
+        t.setBackground(Ui.ripple(a, Ui.round(a, Ui.SURFACE2, 16), 16));
+        t.setOnClickListener(l);
+        LinearLayout.LayoutParams lp = Ui.lp(Ui.dp(a, 34), Ui.dp(a, 34));
+        lp.setMargins(Ui.dp(a, 6), 0, 0, 0);
+        t.setLayoutParams(lp);
+        Ui.setEnabledLook(t, enabled);
+        return t;
     }
 
     private void setPill(TextView t, String label, int color) {

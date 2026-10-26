@@ -1,6 +1,9 @@
 package com.akillisira.app;
 
 import android.content.ComponentName;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.MediaSessionManager;
@@ -23,6 +26,31 @@ public class MusicListenerService extends NotificationListenerService {
     private MediaController controller;
     private Engine engine;
     private boolean polling;
+    private AudioManager audio;
+    private final java.util.Set<Integer> carDevices = new java.util.HashSet<>();
+
+    /** Bluetooth ses cihazı bağlanınca adına bakıp arabaysa "Arabada" moduna geçer. */
+    private final AudioDeviceCallback deviceCallback = new AudioDeviceCallback() {
+        @Override
+        public void onAudioDevicesAdded(AudioDeviceInfo[] added) {
+            for (AudioDeviceInfo d : added) {
+                if (!d.isSink() || d.getType() != AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) continue;
+                String name = String.valueOf(d.getProductName());
+                if (Car.looksLikeCar(name) && carDevices.add(d.getId()) && engine != null) {
+                    engine.onCarConnected(name);
+                }
+            }
+        }
+
+        @Override
+        public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) {
+            for (AudioDeviceInfo d : removed) {
+                if (carDevices.remove(d.getId()) && carDevices.isEmpty() && engine != null) {
+                    engine.onCarDisconnected();
+                }
+            }
+        }
+    };
 
     private final MediaSessionManager.OnActiveSessionsChangedListener sessionsListener =
             this::attach;
@@ -83,6 +111,8 @@ public class MusicListenerService extends NotificationListenerService {
         } catch (SecurityException e) {
             engine.log("Bildirim erişimi yok: " + e.getMessage());
         }
+        audio = getSystemService(AudioManager.class);
+        if (audio != null) audio.registerAudioDeviceCallback(deviceCallback, handler);
     }
 
     @Override
@@ -91,6 +121,9 @@ public class MusicListenerService extends NotificationListenerService {
             try { sessions.removeOnActiveSessionsChangedListener(sessionsListener); } catch (Exception ignored) {}
         }
         detach();
+        if (audio != null) {
+            try { audio.unregisterAudioDeviceCallback(deviceCallback); } catch (Exception ignored) {}
+        }
         if (engine != null) engine.setServiceConnected(false);
         super.onListenerDisconnected();
     }

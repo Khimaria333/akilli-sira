@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Pil tasarrufunun uygulamayı kapatmaması için izin isteyebilmek -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Bildirimde sıradaki şarkıyı göstermek için (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- YT Music'i bulup açabilmek için -->
     <queries>
@@ -41,5 +43,23 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <!-- Bildirim ve widget düğmeleri -->
+        <receiver
+            android:name=".ActionReceiver"
+            android:exported="false" />
+
+        <!-- Ana ekran widget'ı -->
+        <receiver
+            android:name=".WidgetProvider"
+            android:exported="true"
+            android:label="Akıllı Sıra">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info" />
+        </receiver>
     </application>
 </manifest>

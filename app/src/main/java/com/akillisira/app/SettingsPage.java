@@ -12,7 +12,8 @@ import android.widget.TextView;
 /** Ayarlar, izin durumu, hakkında ve geliştirici kaydı. */
 public class SettingsPage extends Page {
 
-    private Switch swAuto, swFade, swBack;
+    private Switch swAuto, swFade, swBack, swNotif, swNight, swCar;
+    private TextView notifPermBtn;
     private Ui.Segmented fadeSeg, langSeg, modeSeg;
     private TextView methodText, retrySilent;
     private TextView permNotif, permOverlay, permBattery;
@@ -56,6 +57,46 @@ public class SettingsPage extends Page {
         retrySilent.setOnClickListener(v -> e.resetSilent());
         g.addView(retrySilent, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 10, 0, 0));
         body.addView(g, full());
+
+        // ---- Bildirim ve widget ----
+        body.addView(Ui.section(a, "Bildirim ve widget"));
+        LinearLayout nb = Ui.card(a);
+        swNotif = switchRow(nb, "Bildirimde sıradakini göster",
+                "Kilit ekranında ve bildirimde sıradaki şarkı; Şimdi geç ve 👎 düğmeleriyle",
+                e.isNotif(), (b, on) -> {
+                    e.setNotif(on);
+                    if (on && !a.notificationsAllowed()) a.requestNotifications();
+                });
+        notifPermBtn = Ui.secondaryButton(a, "Bildirim iznini ver");
+        notifPermBtn.setOnClickListener(v -> a.requestNotifications());
+        nb.addView(notifPermBtn, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 8, 0, 0));
+        divider(nb);
+        nb.addView(Ui.text(a, "Ana ekran widget'ı", 15, Ui.TEXT, Ui.BOLD));
+        TextView wd = Ui.text(a, "Ana ekranda boş bir yere uzun bas → Widget'lar → Akıllı Sıra. "
+                + "Çalanı ve sıradakini gösterir, ⏭ ve 👎 düğmeleri vardır.", 13, Ui.TEXT2, Ui.REGULAR);
+        wd.setPadding(0, Ui.dp(a, 4), 0, 0);
+        wd.setLineSpacing(0, 1.15f);
+        nb.addView(wd);
+        body.addView(nb, full());
+
+        // ---- Akıllı bağlam ----
+        body.addView(Ui.section(a, "Akıllı bağlam"));
+        LinearLayout cb = Ui.card(a);
+        swNight = switchRow(cb, "Gece otomatik sakinleş",
+                "23:00 – 06:00 arası, ruh hali seçmediysen sıradakiler daha sakin seçilir",
+                e.isNightCalm(), (b, on) -> e.setNightCalm(on));
+        divider(cb);
+        swCar = switchRow(cb, "Arabaya bağlanınca Arabada modu",
+                "Bluetooth ile arabaya bağlanınca yol şarkılarına geçer, ayrılınca önceki moda döner",
+                e.isCarMode(), (b, on) -> e.setCarMode(on));
+        divider(cb);
+        cb.addView(Ui.text(a, "Uyku zamanlayıcı", 15, Ui.TEXT, Ui.BOLD));
+        TextView sd = Ui.text(a, "Şimdi Çalıyor ekranındaki 😴 düğmesinden kur. Süre dolunca çalan şarkı biter, "
+                + "ses yavaşça kısılır ve müzik durur. Bu sürede sakin şarkılar seçilir.", 13, Ui.TEXT2, Ui.REGULAR);
+        sd.setPadding(0, Ui.dp(a, 4), 0, 0);
+        sd.setLineSpacing(0, 1.15f);
+        cb.addView(sd);
+        body.addView(cb, full());
 
         // ---- Öneriler ----
         body.addView(Ui.section(a, "Öneriler"));
@@ -173,6 +214,9 @@ public class SettingsPage extends Page {
         swAuto.setChecked(e.isAuto());
         swFade.setChecked(e.isFade());
         swBack.setChecked(e.isReturnToApp());
+        swNotif.setChecked(e.isNotif());
+        swNight.setChecked(e.isNightCalm());
+        swCar.setChecked(e.isCarMode());
         langSeg.select(e.isTurkish() ? 0 : 1);
         modeSeg.select(e.getMode() + 1);
     }
@@ -186,6 +230,7 @@ public class SettingsPage extends Page {
                 ? "YouTube Music öne gelerek geçiyor. Telefonundaki YT Music sürümü sessiz geçişi desteklemiyor."
                 : "İlk otomatik geçişte en iyi yöntem denenip öğrenilecek.");
         retrySilent.setVisibility(s == Engine.SILENT_NO ? View.VISIBLE : View.GONE);
+        notifPermBtn.setVisibility(e.isNotif() && !a.notificationsAllowed() ? View.VISIBLE : View.GONE);
         setPerm(permNotif, a.hasNotificationAccess());
         setPerm(permOverlay, a.canOverlay());
         setPerm(permBattery, a.batteryUnrestricted());

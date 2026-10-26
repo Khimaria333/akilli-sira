@@ -8,7 +8,7 @@ import android.widget.TextView;
 /** İlk açılışta izinleri adım adım aldıran ekran. */
 public class SetupPage extends Page {
 
-    private Step notif, overlay, battery;
+    private Step notif, overlay, battery, notifs;
     private TextView startBtn;
 
     public SetupPage(MainActivity a, Engine e) {
@@ -105,6 +105,12 @@ public class SetupPage extends Page {
                 "Telefon pil tasarrufu için uygulamayı kapatırsa geçişler kaçabilir.",
                 "Kaldır", a::openBatterySettings);
         body.addView(battery.card, full());
+        body.addView(Ui.space(a, 12));
+
+        notifs = new Step(4, Views.Icon.BELL, "Bildirimlere izin ver (önerilir)",
+                "Sıradaki şarkıyı kilit ekranında görmek ve uygulamayı açmadan geçmek için.",
+                "İzin ver", a::requestNotifications);
+        body.addView(notifs.card, full());
         body.addView(Ui.space(a, 28));
 
         startBtn = Ui.primaryButton(a, "Başla");
@@ -118,6 +124,7 @@ public class SetupPage extends Page {
         notif.set(n);
         overlay.set(o);
         battery.set(a.batteryUnrestricted());
+        notifs.set(a.notificationsAllowed());
         Ui.setEnabledLook(startBtn, n && o);
         startBtn.setText(n && o ? "Başla" : "Önce 1. ve 2. adımı tamamla");
     }

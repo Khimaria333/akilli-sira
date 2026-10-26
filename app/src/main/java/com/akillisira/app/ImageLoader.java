@@ -52,6 +52,25 @@ public final class ImageLoader {
         });
     }
 
+    /** Önbellekte varsa döndürür, yoksa null. */
+    public static Bitmap cached(String url) {
+        return url == null ? null : CACHE.get(url);
+    }
+
+    /** Arka planda indirir, bitince ana iş parçacığında haber verir. */
+    public static void fetch(String url, java.util.function.Consumer<Bitmap> done) {
+        if (url == null) return;
+        POOL.submit(() -> {
+            Bitmap bmp = CACHE.get(url);
+            if (bmp == null) {
+                bmp = download(url);
+                if (bmp != null) CACHE.put(url, bmp);
+            }
+            final Bitmap out = bmp;
+            if (out != null) MAIN.post(() -> done.accept(out));
+        });
+    }
+
     private static Bitmap download(String url) {
         HttpURLConnection c = null;
         try {

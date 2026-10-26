@@ -82,6 +82,21 @@ public final class Engine {
     public String problem;
     public final LinkedList<String> log = new LinkedList<>();
 
+    // Kuyruk: kullanıcının sıraya koyduğu şarkılar (otomatik öneriden önce çalar)
+    public final List<Track> queue = new ArrayList<>();
+    public int queueVersion;
+    private Track autoPick;
+
+    // Uyku zamanlayıcı
+    private long sleepUntil;
+    public boolean sleepFinishing;
+
+    // Kalıcı veriler, bildirim/widget
+    public final Store store;
+    private final Notifier notifier;
+    private String lastLoggedKey;
+    private boolean carActive;
+
     // Keşfet
     public boolean discoverLoading;
     public List<Track> discoverResults = new ArrayList<>();
@@ -116,6 +131,8 @@ public final class Engine {
 
     private Engine(Context app) {
         this.app = app;
+        store = new Store(app);
+        notifier = new Notifier(app);
         prefs = app.getSharedPreferences("ayarlar", Context.MODE_PRIVATE);
         pairs = app.getSharedPreferences("oneriler", Context.MODE_PRIVATE);
         audio = app.getSystemService(AudioManager.class);
@@ -154,6 +171,37 @@ public final class Engine {
 
     public boolean isReturnToApp() { return prefs.getBoolean("returnToApp", true); }
     public void setReturnToApp(boolean on) { prefs.edit().putBoolean("returnToApp", on).apply(); notifyChanged(); }
+
+    public boolean isNotif() { return prefs.getBoolean("notif", true); }
+    public void setNotif(boolean on) { prefs.edit().putBoolean("notif", on).apply(); notifyChanged(); }
+
+    public boolean isNightCalm() { return prefs.getBoolean("nightCalm", true); }
+    public void setNightCalm(boolean on) { prefs.edit().putBoolean("nightCalm", on).apply(); refresh(); notifyChanged(); }
+
+    public boolean isCarMode() { return prefs.getBoolean("carMode", true); }
+    public void setCarMode(boolean on) { prefs.edit().putBoolean("carMode", on).apply(); notifyChanged(); }
+
+    public boolean isCarActive() { return carActive; }
+
+    public boolean notifAllowed() { return notifier.canPost(); }
+
+    public void forceWidgets() { notifier.forceWidgets(this); }
+
+    public void refreshNotification() { notifier.reset(); notifyChanged(); }
+
+    /** Hava ayarı + bağlam: gece ya da uyku zamanlayıcısı açıkken sakinleştir. */
+    public int effectiveMode() {
+        int m = getMode();
+        if (sleepUntil > 0 || sleepFinishing) return -1;
+        int h = hourNow();
+        if (m == 0 && isNightCalm() && getVibe() == null && getMoodId() == null && (h >= 23 || h < 6)) return -1;
+        return m;
+    }
+
+    public boolean nightCalmActive() {
+        int h = hourNow();
+        return getMode() == 0 && isNightCalm() && getVibe() == null && getMoodId() == null && (h >= 23 || h < 6);
+    }
 
     public int getSilentState() { return prefs.getInt("silent", SILENT_UNKNOWN); }
     public void resetSilent() {
@@ -279,13 +327,22 @@ public final class Engine {
 
         if (!isPlaying && fadingOut) restoreVolumeNow();   // kullanıcı durdurdu
 
-        if (isAuto() && isPlaying && pick != null && !firedForCurrent && nowDurationMs > 30000) {
-            long fadeMs = isFade() ? getFadeSec() * 1000L : 0;
+        if (sleepUntil > 0 && !sleepFinishing && SystemClock.elapsedRealtime() >= sleepUntil) {
+            sleepFinishing = true;
+            log("😴 Uyku zamanı: bu şarkı bitince müzik duracak");
+        }
+
+        boolean stopHere = sleepFinishing;
+        if (isPlaying && !firedForCurrent && nowDurationMs > 30000 && (stopHere || (isAuto() && pick != null))) {
+            long fadeMs = isFade() || stopHere ? Math.max(getFadeSec(), stopHere ? 6 : 0) * 1000L : 0;
             if (fadeMs > 0 && !fadingOut && savedVolume < 0 && lastRemainingMs <= fadeMs + 250) {
                 startFadeOut(Math.max(500, lastRemainingMs - 350));
             }
             long switchAt = fadeMs > 0 ? 350 : 1500;
-            if (lastRemainingMs <= switchAt) fire(pick, false);
+            if (lastRemainingMs <= switchAt) {
+                if (stopHere) stopForSleep();
+                else fire(pick, false);
+            }
         }
 
         // Sessiz yöntem cevap vermediyse bağlantıyla geç
@@ -305,15 +362,182 @@ public final class Engine {
     // Kullanıcıdan gelenler
     // =====================================================================
 
+    /** Önerilerden birini hemen sıradaki yap (kuyruğun en başına koyar). */
     public void choose(Track t) {
-        pick = t;
+        removeFromQueueByKey(t.key());
+        queue.add(0, t);
+        queueVersion++;
         List<Track> rest = new ArrayList<>();
-        for (Track a : allRanked) if (a != t && rest.size() < 8) rest.add(a);
+        for (Track a : alternatives) if (a != t) rest.add(a);
         alternatives = rest;
         if (seed != null) rememberPair(seed.key(), t.key());
         log("Sıradaki: " + t);
-        prefetchVideoId(t);
+        refreshPick();
         notifyChanged();
+    }
+
+    /** Kuyruğun sonuna ekle. */
+    public void addToQueue(Track t) {
+        if (indexInQueue(t.key()) >= 0) return;
+        queue.add(t);
+        queueVersion++;
+        List<Track> rest = new ArrayList<>();
+        for (Track a : alternatives) if (a != t) rest.add(a);
+        alternatives = rest;
+        log("Sıraya eklendi: " + t);
+        refreshPick();
+        notifyChanged();
+    }
+
+    public void moveInQueue(int i, int delta) {
+        int j = i + delta;
+        if (i < 0 || j < 0 || i >= queue.size() || j >= queue.size()) return;
+        Collections.swap(queue, i, j);
+        queueVersion++;
+        refreshPick();
+        notifyChanged();
+    }
+
+    public void removeFromQueue(int i) {
+        if (i < 0 || i >= queue.size()) return;
+        queue.remove(i);
+        queueVersion++;
+        refreshPick();
+        notifyChanged();
+    }
+
+    public void clearQueue() {
+        queue.clear();
+        queueVersion++;
+        refreshPick();
+        notifyChanged();
+    }
+
+    public boolean pickFromQueue() {
+        return !queue.isEmpty() && pick == queue.get(0);
+    }
+
+    private int indexInQueue(String key) {
+        for (int i = 0; i < queue.size(); i++) if (queue.get(i).key().equals(key)) return i;
+        return -1;
+    }
+
+    private void removeFromQueueByKey(String key) {
+        int i = indexInQueue(key);
+        if (i >= 0) { queue.remove(i); queueVersion++; }
+    }
+
+    private void refreshPick() {
+        pick = !queue.isEmpty() ? queue.get(0) : autoPick;
+        if (pick != null) prefetchVideoId(pick);
+    }
+
+    /** 👎 Sıradakini beğenmedim: bir daha önerme, yerine başkasını koy. */
+    public void dislikeNext() {
+        Track t = pick;
+        if (t == null) return;
+        store.dislike(t.key(), t.artist, t.title);
+        log("👎 " + t + " (bir daha önerilmeyecek)");
+        if (pickFromQueue()) {
+            queue.remove(0);
+            queueVersion++;
+        } else {
+            autoPick = alternatives.isEmpty() ? null : alternatives.get(0);
+            List<Track> rest = new ArrayList<>(alternatives);
+            if (!rest.isEmpty()) rest.remove(0);
+            alternatives = rest;
+            if (autoPick == null && nowKey != null) { recompute(); return; }
+        }
+        refreshPick();
+        notifyChanged();
+    }
+
+    /** 👎 Çalanı beğenmedim: bir daha önerme ve hemen sıradakine geç. */
+    public void dislikeNow() {
+        if (nowTitle == null) return;
+        store.dislike(nowKey, nowArtist, nowTitle);
+        log("👎 " + nowArtist + " – " + nowTitle + " (geçiliyor)");
+        if (pick != null) fire(pick, true);
+        notifyChanged();
+    }
+
+    public void undislike(String key) {
+        store.undislike(key);
+        notifyChanged();
+    }
+
+    // ---- Uyku zamanlayıcı ----
+
+    public void setSleep(int minutes) {
+        if (minutes <= 0) {
+            sleepUntil = 0;
+            sleepFinishing = false;
+            log("Uyku zamanlayıcı kapatıldı");
+        } else {
+            sleepUntil = SystemClock.elapsedRealtime() + minutes * 60000L;
+            sleepFinishing = false;
+            log("😴 Uyku zamanlayıcı: " + minutes + " dk");
+            refresh();   // sakin şarkılara yönel
+        }
+        notifyChanged();
+    }
+
+    /** Kalan süre (ms); kapalıysa -1, süre dolduysa 0. */
+    public long sleepRemainingMs() {
+        if (sleepFinishing) return 0;
+        if (sleepUntil <= 0) return -1;
+        return Math.max(0, sleepUntil - SystemClock.elapsedRealtime());
+    }
+
+    private void stopForSleep() {
+        firedForCurrent = true;
+        sleepUntil = 0;
+        sleepFinishing = false;
+        try {
+            if (controller != null) controller.getTransportControls().pause();
+        } catch (Exception ignored) {}
+        log("😴 İyi uykular, müzik durduruldu");
+        main.postDelayed(this::restoreVolumeNow, 1500);
+        notifyChanged();
+    }
+
+    // ---- Araba ----
+
+    public void onCarConnected(String name) {
+        if (!isCarMode() || carActive) return;
+        carActive = true;
+        if ("araba".equals(getPlaceId()) && getVibe() == null) return;
+        prefs.edit()
+                .putString("carPrevMood", getMoodId())
+                .putString("carPrevPlace", getPlaceId())
+                .putString("carPrevVibe", getVibe())
+                .putBoolean("carSwitched", true)
+                .remove("vibe")
+                .putString("mood", getMoodId() != null ? getMoodId() : "mutlu")
+                .putString("place", "araba")
+                .apply();
+        log("🚗 " + name + " bağlandı: Arabada modu");
+        refresh();
+        notifyChanged();
+    }
+
+    public void onCarDisconnected() {
+        if (!carActive) return;
+        carActive = false;
+        if (prefs.getBoolean("carSwitched", false)) {
+            SharedPreferences.Editor ed = prefs.edit();
+            putOrRemove(ed, "mood", prefs.getString("carPrevMood", null));
+            putOrRemove(ed, "place", prefs.getString("carPrevPlace", null));
+            putOrRemove(ed, "vibe", prefs.getString("carPrevVibe", null));
+            ed.putBoolean("carSwitched", false).apply();
+            log("🚗 Araba bağlantısı kesildi: önceki moda dönüldü");
+            refresh();
+        }
+        notifyChanged();
+    }
+
+    private static void putOrRemove(SharedPreferences.Editor ed, String k, String v) {
+        if (v == null) ed.remove(k); else ed.putString(k, v);
     }
 
     public void skipNow() {
@@ -326,10 +550,15 @@ public final class Engine {
 
     /** Keşfet listesinden bir şarkıyı hemen başlatır; listenin geri kalanı sıraya öncelikli girer. */
     public void playNow(Track t, List<Track> fromList) {
-        plan = new ArrayList<>(fromList);
-        plan.remove(t);
-        for (Track p : plan) p.sources.add("plan");
+        List<Track> rest = new ArrayList<>(fromList);
+        rest.remove(t);
+        plan = new ArrayList<>();
+        queue.clear();
+        queue.addAll(Scorer.flowOrder(t, rest));   // tempo ve enerjiye göre akıcı sıra
+        queueVersion++;
         fire(t, true);
+        refreshPick();
+        notifyChanged();
     }
 
     /** Geçişe kalan süre (ms); bilinmiyorsa -1. */
@@ -490,8 +719,11 @@ public final class Engine {
         final int gen = ++generation;
         final String title = nowTitle, artist = nowArtist;
         final Set<String> hist = new HashSet<>(history);
+        hist.addAll(store.dislikedKeys());
+        for (Track q : queue) hist.add(q.key());
         final Scorer.Ctx ctx = new Scorer.Ctx();
-        ctx.mode = getMode();
+        ctx.mode = effectiveMode();
+        ctx.artistDislikes = store.dislikedArtists();
         ctx.target = sessionTarget();
         ctx.recentArtists = new ArrayList<>(recentArtists);
         final boolean turkish = isTurkish();
@@ -500,7 +732,8 @@ public final class Engine {
 
         computing = true;
         problem = null;
-        pick = null;
+        autoPick = null;
+        refreshPick();
         seed = null;
         alternatives = new ArrayList<>();
         allRanked = new ArrayList<>();
@@ -524,16 +757,17 @@ public final class Engine {
                     computing = false;
                     seed = seedF;
                     allRanked = ranked;
+                    logPlay(seedF);
                     if (ranked.isEmpty()) {
                         problem = turkish ? "Uygun Türkçe şarkı bulunamadı. Global moda geçmeyi dene."
                                 : "Uygun şarkı bulunamadı";
                     } else {
-                        pick = ranked.get(0);
+                        autoPick = ranked.get(0);
                         alternatives = new ArrayList<>(ranked.subList(1, Math.min(9, ranked.size())));
-                        rememberPair(seedF.key(), pick.key());
-                        log("Sıradaki: " + pick);
-                        prefetchVideoId(pick);
+                        rememberPair(seedF.key(), autoPick.key());
+                        if (queue.isEmpty()) log("Sıradaki: " + autoPick);
                     }
+                    refreshPick();
                     notifyChanged();
                 });
             } catch (Exception e) {
@@ -542,6 +776,10 @@ public final class Engine {
                     if (gen != generation) return;
                     computing = false;
                     problem = "İnternet bağlantısını kontrol et (" + msg + ")";
+                    Track bare = new Track();
+                    bare.title = title;
+                    bare.artist = artist;
+                    logPlay(bare);
                     log("Hesaplanamadı: " + msg);
                     notifyChanged();
                 });
@@ -752,6 +990,7 @@ public final class Engine {
 
     private void runDiscover(Moods.Target target, boolean turkish) {
         final Set<String> hist = new HashSet<>(history);
+        hist.addAll(store.dislikedKeys());
         final int gen = ++discoverGeneration;
         discoverLoading = true;
         discoverProblem = null;
@@ -830,6 +1069,7 @@ public final class Engine {
     }
 
     private void remember(String key, String artist, Track known) {
+        if (removeMatchingFromQueue(nowTitle)) refreshPick();
         history.remove(key);
         history.add(key);
         while (history.size() > 300) history.remove(history.iterator().next());
@@ -855,5 +1095,33 @@ public final class Engine {
 
     void notifyChanged() {
         for (Listener l : listeners) l.onEngineChanged();
+        notifier.update(this);
+    }
+
+    private boolean removeMatchingFromQueue(String title) {
+        boolean changed = false;
+        for (int i = queue.size() - 1; i >= 0; i--) {
+            if (titlesMatch(title, queue.get(i).title)) { queue.remove(i); changed = true; }
+        }
+        if (changed) queueVersion++;
+        return changed;
+    }
+
+    /** Çalan şarkıyı geçmişe bir kez yaz. */
+    private void logPlay(Track s) {
+        if (nowKey == null || nowKey.equals(lastLoggedKey)) return;
+        lastLoggedKey = nowKey;
+        Store.Play p = new Store.Play();
+        p.ts = System.currentTimeMillis();
+        p.title = nowTitle;
+        p.artist = nowArtist;
+        p.cover = s.coverUrl;
+        p.bpm = s.hasBpm() ? s.bpm : 0;
+        p.energy = s.energy();
+        p.lang = s.lang != Lang.UNKNOWN ? s.lang : Lang.detect(nowTitle, nowArtist);
+        p.durMs = nowDurationMs;
+        Moods.Target t = sessionTarget();
+        p.mood = t != null ? t.label : null;
+        net.submit(() -> store.addPlay(p));
     }
 }

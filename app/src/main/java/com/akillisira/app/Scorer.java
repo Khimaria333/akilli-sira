@@ -25,6 +25,7 @@ public final class Scorer {
         public List<String> recentArtists; // normalize edilmiş son sanatçılar
         public int preferLang = Lang.UNKNOWN; // Global modda dengelemek için tercih edilen dil
         public boolean strictArtist = true;   // aynı sanatçıyı arka arkaya hiç koyma
+        public java.util.Map<String, Integer> artistDislikes; // sanatçı → beğenilmeyen şarkı sayısı
     }
 
     public static double preScore(Track c) {
@@ -105,12 +106,38 @@ public final class Scorer {
             if (seed != null && a.equals(seedArtist)) s -= 25;
             else if (x.recentArtists != null && x.recentArtists.contains(a)) s -= 12;
             if (c.durationSec > 0 && (c.durationSec < 90 || c.durationSec > 480)) s -= 15;
+            if (x.artistDislikes != null) {
+                Integer n = x.artistDislikes.get(a);
+                if (n != null && n > 0) s -= Math.min(30, 12 * n);
+            }
 
             c.score = s;
             c.reason = why.isEmpty() ? "tarzına yakın" : String.join(" · ", why);
             out.add(c);
         }
         out.sort((p, q) -> Double.compare(q.score, p.score));
+        return out;
+    }
+
+    /** Bir listeyi tempo ve enerjiye göre akıcı sıraya dizer (en yakın komşu). */
+    public static List<Track> flowOrder(Track start, List<Track> rest) {
+        List<Track> left = new ArrayList<>(rest);
+        List<Track> out = new ArrayList<>();
+        Track cur = start;
+        while (!left.isEmpty()) {
+            Track best = null;
+            double bestD = Double.MAX_VALUE;
+            for (Track t : left) {
+                double d = (cur.hasBpm() && t.hasBpm()) ? bpmDistance(t.bpm, cur.bpm) : 0.12;
+                double e1 = cur.energy(), e2 = t.energy();
+                d += (e1 >= 0 && e2 >= 0) ? Math.abs(e1 - e2) * 0.3 : 0.06;
+                if (Text.norm(Text.mainArtist(t.artist)).equals(Text.norm(Text.mainArtist(cur.artist)))) d += 0.2;
+                if (d < bestD) { bestD = d; best = t; }
+            }
+            out.add(best);
+            left.remove(best);
+            cur = best;
+        }
         return out;
     }
 
