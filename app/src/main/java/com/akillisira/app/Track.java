@@ -22,6 +22,7 @@ public class Track {
     public int genreId;                // Deezer türü (0 = bilinmiyor)
     public String genre;               // "Rap/Hip Hop", "Pop" ...
     public java.util.Map<String, Integer> tags;   // Last.fm sanatçı etiketleri (yoksa null)
+    public java.util.Map<String, Integer> trackTags;   // Last.fm şarkı etiketleri (yoksa null)
     public volatile String videoId;    // YT Music'teki karşılığı
 
     /** Kaynaklar: "same" aynı sanatçı, "related" benzer sanatçı, "radio" sanatçı radyosu,

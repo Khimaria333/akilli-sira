@@ -35,6 +35,8 @@ public final class Scorer {
         public Set<Long> relatedArtists;   // çalan sanatçının benzerleri (Deezer)
         public Set<Long> radioArtists;     // çalan sanatçının radyosunda geçen sanatçılar
         public java.util.Map<String, Integer> seedTags;   // çalan sanatçının Last.fm etiketleri
+        public java.util.Map<String, Integer> profile;    // beğenilerden çıkan tarz profili
+        public int explore = 1;                           // 0 tanıdık, 1 dengeli, 2 yeni
     }
 
     public static double preScore(Track c) {
@@ -137,7 +139,9 @@ public final class Scorer {
 
             // ---- Ruh hali / sahne etiketleri (Last.fm) ----
             if (x.target != null && !x.target.tags.isEmpty()) {
-                double ov = LastFm.overlap(c.tags, x.target.tags);
+                double ovA = LastFm.overlap(c.tags, x.target.tags);
+                double ovT = LastFm.overlap(c.trackTags, x.target.tags);
+                double ov = ovT >= 0 && ovA >= 0 ? 0.6 * ovT + 0.4 * ovA : ovT >= 0 ? ovT : ovA;
                 if (ov > 0) {
                     s += 25 * ov;
                     if (ov >= 0.3) why.add("ruh haline uygun");
@@ -152,8 +156,20 @@ public final class Scorer {
             else if (c.sources.contains("same")) s += 4;
             if (seed == null) s += sourceBonus(c) * 0.5;   // Keşfet'te (çalan yokken) kaynak daha önemli
 
-            // ---- Popülerlik ----
-            s += popularity(c);
+            // ---- Popülerlik (keşif seviyesine göre) ----
+            double pop = Math.min(1.0, c.rank / 800000.0);
+            if (x.explore == 0) s += 12 * pop;
+            else if (x.explore == 2) s += 8 * (1 - pop);
+            else s += 5 * pop;
+
+            // ---- Tarz profili (❤️ beğenilerden) ----
+            if (x.profile != null && !x.profile.isEmpty()) {
+                double ps = LastFm.similarity(x.profile, c.tags);
+                if (ps > 0) {
+                    s += 12 * Math.min(1, ps * 1.5);
+                    if (ps >= 0.35) why.add("tarzına uygun");
+                }
+            }
 
             // ---- Global modda dil dengesi ----
             if (x.preferLang != Lang.UNKNOWN && c.lang == x.preferLang) {

@@ -132,10 +132,12 @@ public final class Engine {
 
     private Engine(Context app) {
         this.app = app;
+        DiskCache.init(app);
         store = new Store(app);
         notifier = new Notifier(app);
         prefs = app.getSharedPreferences("ayarlar", Context.MODE_PRIVATE);
         lastfm.setKey(prefs.getString("lastfmKey", null));
+        loadProfile();
         pairs = app.getSharedPreferences("oneriler", Context.MODE_PRIVATE);
         audio = app.getSystemService(AudioManager.class);
     }
@@ -209,13 +211,15 @@ public final class Engine {
         int m = getMode();
         if (sleepUntil > 0 || sleepFinishing) return -1;
         int h = hourNow();
-        if (m == 0 && isNightCalm() && getVibe() == null && getMoodId() == null && (h >= 23 || h < 6)) return -1;
+        if (m == 0 && isNightCalm() && getVibe() == null && getMoodId() == null && getGenreId() == null
+                && (h >= 23 || h < 6)) return -1;
         return m;
     }
 
     public boolean nightCalmActive() {
         int h = hourNow();
-        return getMode() == 0 && isNightCalm() && getVibe() == null && getMoodId() == null && (h >= 23 || h < 6);
+        return getMode() == 0 && isNightCalm() && getVibe() == null && getMoodId() == null && getGenreId() == null
+                && (h >= 23 || h < 6);
     }
 
     public int getSilentState() { return prefs.getInt("silent", SILENT_UNKNOWN); }
@@ -228,6 +232,8 @@ public final class Engine {
     public String getMoodId() { return prefs.getString("mood", null); }
     public String getPlaceId() { return prefs.getString("place", null); }
 
+    public String getGenreId() { return prefs.getString("genre", null); }
+
     public String getVibe() { return prefs.getString("vibe", null); }
 
     private static final long SESSION_TTL = 4L * 3600 * 1000;
@@ -235,10 +241,10 @@ public final class Engine {
     /** Ruh hali modu 4 saat sonra kendiliğinden kapanır (arabadayken kapanmaz). */
     private boolean sessionExpired() {
         if (carActive) return false;
-        if (getVibe() == null && getMoodId() == null) return false;
+        if (getVibe() == null && getMoodId() == null && getGenreId() == null) return false;
         long ts = prefs.getLong("sessionTs", 0);
         if (System.currentTimeMillis() - ts > SESSION_TTL) {
-            prefs.edit().remove("vibe").remove("mood").remove("place").remove("sessionTs").apply();
+            prefs.edit().remove("vibe").remove("mood").remove("place").remove("genre").remove("sessionTs").apply();
             return true;
         }
         return false;
@@ -250,6 +256,8 @@ public final class Engine {
 
     public Moods.Target sessionTarget() {
         if (sessionExpired()) return null;
+        Genres.Genre g = Genres.byId(getGenreId());
+        if (g != null) return Genres.target(g);
         String v = getVibe();
         if (v != null) return Vibe.parse(v, hourNow()).target(isTurkish());
         return Moods.target(Moods.mood(getMoodId()), Moods.place(getPlaceId()), isTurkish());
@@ -266,7 +274,7 @@ public final class Engine {
     }
 
     public void clearSession() {
-        prefs.edit().remove("mood").remove("place").remove("vibe").apply();
+        prefs.edit().remove("mood").remove("place").remove("vibe").remove("genre").apply();
         plan = new ArrayList<>();
         log("Ruh hali modu kapatıldı");
         if (nowKey != null) recompute();
@@ -799,6 +807,8 @@ public final class Engine {
         ctx.artistDislikes = store.dislikedArtists();
         ctx.artistLikes = store.likedArtists();
         ctx.likedKeys = store.likedKeys();
+        ctx.profile = profile();
+        ctx.explore = getExplore();
         ctx.target = sessionTarget();
         ctx.recentArtists = new ArrayList<>(recentArtists);
         final boolean turkish = isTurkish();
@@ -878,9 +888,9 @@ public final class Engine {
             relSet.addAll(rels);
             Collections.shuffle(rels, rnd);
             for (Long rel : rels.subList(0, Math.min(7, rels.size()))) {
-                pool.addAll(sample(safe(() -> deezer.artistTop(rel, 12, "related")), 4));
+                pool.addAll(topSample(safe(() -> deezer.artistTop(rel, 25, "related")), 4));
             }
-            pool.addAll(sample(safe(() -> deezer.artistTop(s.artistId, 12, "same")), 3));
+            pool.addAll(topSample(safe(() -> deezer.artistTop(s.artistId, 25, "same")), 3));
         }
         // Last.fm: daha isabetli benzer sanatçılar ve tarz etiketleri
         if (lastfm.enabled()) {
@@ -926,7 +936,7 @@ public final class Engine {
         deezer.fillDetailsAll(list);
         deezer.fillGenresAll(list);      // tür ve çıkış yılı
         if (lastfm.enabled()) {
-            fillTags(list);              // tarz etiketleri + kesin dil
+            fillTags(list, ctx.target != null && !ctx.target.tags.isEmpty() ? 25 : 0);   // tarz + dil (+ruh hali)
             if (turkish) list = keepTurkish(list);
         }
         return applyVariety(Scorer.rank(ctx, list), s.key());
@@ -1054,12 +1064,18 @@ public final class Engine {
 
     /** Last.fm etiketlerini doldurur ve dili etiketlere göre düzeltir. */
     private void fillTags(List<Track> list) {
+        fillTags(list, 0);
+    }
+
+    /** trackTagCount: ilk kaç şarkı için şarkı düzeyinde etiket de alınsın (ruh hali isabeti). */
+    private void fillTags(List<Track> list, int trackTagCount) {
         ExecutorService pool = Executors.newFixedThreadPool(3);
         try {
             List<java.util.concurrent.Future<?>> fs = new ArrayList<>();
             for (Track t : list) {
                 fs.add(pool.submit(() -> {
                     t.tags = lastfm.artistTags(t.artist);
+                    if (list.indexOf(t) < trackTagCount) t.trackTags = lastfm.trackTags(t.artist, t.title);
                     int l = LastFm.langFromTags(t.tags);
                     // başlıkta ğ/ş/ı gibi kesin Türkçe harf yoksa etiket kazanır
                     if (l != Lang.UNKNOWN && Lang.detect(t.title, t.artist) != Lang.TR) t.lang = l;
@@ -1114,8 +1130,9 @@ public final class Engine {
     public void discover(String moodId, String placeId) {
         Moods.Mood m = Moods.mood(moodId);
         if (m == null) return;
-        prefs.edit().remove("vibe").apply();
+        prefs.edit().remove("vibe").remove("genre").apply();
         setSession(moodId, placeId);
+        lastDiscover = () -> discover(moodId, placeId);
         final boolean turkish = isTurkish();
         runDiscover(Moods.target(m, Moods.place(placeId), turkish), turkish, null);
     }
@@ -1129,7 +1146,8 @@ public final class Engine {
     /** Serbest cümleden ("akşamüstü sahilde sakin bir şeyler") öneri listesi. */
     public Vibe.Result discoverText(String text) {
         Vibe.Result r = Vibe.parse(text, hourNow());
-        prefs.edit().putString("vibe", text).putString("mood", r.moodId).putString("place", r.placeId)
+        lastDiscover = () -> discoverText(text);
+        prefs.edit().remove("genre").putString("vibe", text).putString("mood", r.moodId).putString("place", r.placeId)
                 .putLong("sessionTs", System.currentTimeMillis()).apply();
         final boolean turkish = isTurkish();
         log("Anlaşılan: " + r.summary());
@@ -1149,13 +1167,219 @@ public final class Engine {
             notifyChanged();
             return;
         }
-        prefs.edit().remove("vibe").remove("mood").remove("place").apply();
+        prefs.edit().remove("vibe").remove("mood").remove("place").remove("genre").apply();
+        lastDiscover = this::discoverFavorites;
         runDiscover(null, isTurkish(), liked);
     }
 
     public void favoritesAndPlay() {
         autoStartDiscover = true;
         discoverFavorites();
+    }
+
+    // ---- Tür ----
+
+    /** Tür sekmesinden: o türün en sevilen şarkıları; otomatik sıra da bu türde kalır. */
+    public void discoverGenre(String id) {
+        Genres.Genre g = Genres.byId(id);
+        if (g == null) return;
+        prefs.edit().remove("vibe").remove("mood").remove("place").putString("genre", id)
+                .putLong("sessionTs", System.currentTimeMillis()).apply();
+        lastDiscover = () -> discoverGenre(id);
+        runDiscover(Genres.target(g), isTurkish(), null);
+    }
+
+    // ---- Tarz profili (❤️ beğenilerden) ----
+
+    private volatile Map<String, Integer> profile = new LinkedHashMap<>();
+    private int profileForLikes = -1;
+    private boolean profileComputing;
+
+    /** Profil: etiket → 0..100. Beğeni sayısı değiştiyse arka planda yeniden hesaplanır. */
+    public Map<String, Integer> profile() {
+        ensureProfile();
+        return profile;
+    }
+
+    public boolean profileComputing() { return profileComputing; }
+
+    private void loadProfile() {
+        String enc = prefs.getString("profile", null);
+        profileForLikes = prefs.getInt("profileLikes", -1);
+        Map<String, Integer> m = new LinkedHashMap<>();
+        if (enc != null && !enc.isEmpty()) {
+            String[] p = enc.split("\t");
+            for (int i = 0; i + 1 < p.length; i += 2) {
+                try { m.put(p[i], Integer.parseInt(p[i + 1])); } catch (Exception ignored) {}
+            }
+        }
+        profile = m;
+    }
+
+    private void ensureProfile() {
+        if (!lastfm.enabled() || profileComputing) return;
+        final List<Store.Liked> liked = store.liked();
+        if (liked.size() == profileForLikes) return;
+        profileComputing = true;
+        net.submit(() -> {
+            Map<String, Double> agg = new HashMap<>();
+            Map<String, Integer> perArtist = new HashMap<>();
+            for (Store.Liked l : liked) {
+                String a = Text.norm(Text.mainArtist(l.artist));
+                perArtist.put(a, perArtist.getOrDefault(a, 0) + 1);
+            }
+            int done = 0;
+            Set<String> seen = new HashSet<>();
+            for (Store.Liked l : liked) {
+                String a = Text.norm(Text.mainArtist(l.artist));
+                if (!seen.add(a) || done >= 40) continue;
+                done++;
+                Map<String, Integer> tags = lastfm.artistTags(l.artist);
+                double w = Math.min(3, perArtist.get(a));   // çok beğenilen sanatçı biraz daha ağır
+                for (Map.Entry<String, Integer> en : tags.entrySet()) {
+                    if (LastFm.isLangTag(en.getKey())) continue;
+                    agg.put(en.getKey(), agg.getOrDefault(en.getKey(), 0.0) + w * en.getValue() / 100.0);
+                }
+            }
+            List<Map.Entry<String, Double>> top = new ArrayList<>(agg.entrySet());
+            top.sort((x, y) -> Double.compare(y.getValue(), x.getValue()));
+            double max = top.isEmpty() ? 1 : top.get(0).getValue();
+            Map<String, Integer> m = new LinkedHashMap<>();
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < top.size() && i < 12; i++) {
+                int v = (int) Math.round(100 * top.get(i).getValue() / max);
+                if (v < 8) continue;
+                m.put(top.get(i).getKey(), v);
+                if (sb.length() > 0) sb.append('\t');
+                sb.append(top.get(i).getKey()).append('\t').append(v);
+            }
+            final int forLikes = liked.size();
+            main.post(() -> {
+                profile = m;
+                profileForLikes = forLikes;
+                profileComputing = false;
+                prefs.edit().putString("profile", sb.toString()).putInt("profileLikes", forLikes).apply();
+                notifyChanged();
+            });
+        });
+    }
+
+    /** Tarz profilindeki en güçlü etiketlerle liste. */
+    public void discoverProfile() {
+        Map<String, Integer> p = profile();
+        if (p.isEmpty()) {
+            discoverLoading = false;
+            discoverResults = new ArrayList<>();
+            discoverCurve = null;
+            discoverProblem = !lastfm.enabled()
+                    ? "Tarz profili için Ayarlar'dan Last.fm'i bağla."
+                    : store.liked().isEmpty() ? "Önce birkaç şarkıyı ❤️ ile beğen, tarzını öğreneyim."
+                    : "Tarz profilin hazırlanıyor, birkaç saniye sonra tekrar dene.";
+            notifyChanged();
+            return;
+        }
+        prefs.edit().remove("vibe").remove("mood").remove("place").remove("genre").apply();
+        lastDiscover = this::discoverProfile;
+        Moods.Target t = new Moods.Target();
+        t.bpmLo = 40;
+        t.bpmHi = 220;
+        t.gain = Double.NaN;
+        int n = 0;
+        for (String tag : p.keySet()) {
+            if (n++ >= 5) break;
+            t.tags.add(tag);
+        }
+        t.label = "🧭 Tarzına göre";
+        runDiscover(t, isTurkish(), null);
+    }
+
+    // ---- Keşif seviyesi: 0 tanıdık, 1 dengeli, 2 yeni ----
+
+    public int getExplore() { return prefs.getInt("explore", 1); }
+
+    public void setExplore(int v) {
+        if (v == getExplore()) return;
+        prefs.edit().putInt("explore", v).apply();
+        refresh();
+        notifyChanged();
+    }
+
+    /** Sanatçının şarkılarından keşif seviyesine göre örnek: tanıdıkta hitler, yenide az bilinenler. */
+    private List<Track> topSample(List<Track> top, int n) {
+        int ex = getExplore();
+        if (ex == 0) return sample(top.subList(0, Math.min(6, top.size())), n);
+        if (ex == 2 && top.size() > 6) return sample(top.subList(4, top.size()), n);
+        return sample(top, n);
+    }
+
+    // ---- Müzikle uyan ----
+
+    public boolean wakeActive;
+    private boolean wakeOrder;
+    private int wakeTargetVol;
+    private long wakeRampStart;
+    private final Runnable wakeRamp = this::wakeRampStep;
+
+    /** Alarm ekranından: sesi en kısığa al, sakin başlayıp hareketlenen bir liste başlat, sesi yavaşça aç. */
+    public void startWake() {
+        wakeActive = true;
+        sleepUntil = 0;
+        sleepFinishing = false;
+        if (audio != null) {
+            int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            wakeTargetVol = Math.max(2, Math.round(max * WakeScheduler.volumePct(app) / 100f));
+            try { audio.setStreamVolume(AudioManager.STREAM_MUSIC, 1, 0); } catch (Exception ignored) {}
+        }
+        wakeRampStart = 0;
+        wakeOrder = true;
+        autoStartDiscover = true;
+        log("⏰ Günaydın! Uyanma listesi hazırlanıyor");
+        discoverText("sabah keyifli uyanış");
+        main.removeCallbacks(wakeRamp);
+        main.postDelayed(wakeRamp, 1000);
+    }
+
+    private void wakeRampStep() {
+        if (!wakeActive || audio == null) return;
+        if (playing) {
+            long now = SystemClock.elapsedRealtime();
+            if (wakeRampStart == 0) wakeRampStart = now;
+            double f = Math.min(1, (now - wakeRampStart) / 150000.0);   // 2,5 dakikada tam ses
+            int v = 1 + (int) Math.round((wakeTargetVol - 1) * f);
+            try { audio.setStreamVolume(AudioManager.STREAM_MUSIC, v, 0); } catch (Exception ignored) {}
+            if (f >= 1) { wakeActive = false; return; }
+        }
+        main.postDelayed(wakeRamp, 2000);
+    }
+
+    public void stopWake(boolean pauseMusic) {
+        wakeActive = false;
+        wakeOrder = false;
+        autoStartDiscover = false;
+        main.removeCallbacks(wakeRamp);
+        if (pauseMusic && controller != null) {
+            try { controller.getTransportControls().pause(); } catch (Exception ignored) {}
+        }
+        notifyChanged();
+    }
+
+    // ---- Aynı isteği yeniden üret ----
+
+    private Runnable lastDiscover;
+    public String discoverStage = "";
+
+    public boolean canRedo() { return lastDiscover != null; }
+
+    public void redoDiscover() {
+        if (lastDiscover != null) lastDiscover.run();
+    }
+
+    private void stage(int gen, String text) {
+        main.post(() -> {
+            if (gen != discoverGeneration) return;
+            discoverStage = text;
+            notifyChanged();
+        });
     }
 
     private void runDiscover(Moods.Target target, boolean turkish, List<Store.Liked> favorites) {
@@ -1172,7 +1396,10 @@ public final class Engine {
         final Set<String> likedKeys = store.likedKeys();
         final Map<String, Integer> artistDislikes = store.dislikedArtists();
         final int gen = ++discoverGeneration;
+        final Map<String, Integer> prof = profile();
+        final int explore = getExplore();
         discoverLoading = true;
+        discoverStage = "Listeler aranıyor…";
         discoverProblem = null;
         discoverResults = new ArrayList<>();
         discoverCurve = null;
@@ -1236,11 +1463,15 @@ public final class Engine {
                 classifyLanguages(list);
                 if (turkish) list = keepTurkish(list);
                 list = preselect(list, 45);   // her seferinde biraz farklı olsun
+                stage(gen, "Tempo ve enerji analiz ediliyor…");
                 deezer.fillDetailsAll(list);
                 if (lastfm.enabled()) {
-                    fillTags(list);
+                    stage(gen, "Tarz etiketleri okunuyor…");
+                    boolean moodTags = target != null && !target.tags.isEmpty();
+                    fillTags(list, moodTags ? 30 : 0);
                     if (turkish) list = keepTurkish(list);
                 }
+                stage(gen, "Sıralanıyor…");
 
                 Scorer.Ctx ctx = new Scorer.Ctx();
                 ctx.target = target;
@@ -1248,6 +1479,8 @@ public final class Engine {
                 ctx.likedKeys = likedKeys;
                 ctx.artistLikes = artistLikes;
                 ctx.artistDislikes = artistDislikes;
+                ctx.profile = prof;
+                ctx.explore = explore;
                 if (dj && target != null) {   // DJ'de iniş-çıkış için aralığı genişlet
                     target.bpmLo *= 0.85;
                     target.bpmHi *= 1.15;
@@ -1290,7 +1523,14 @@ public final class Engine {
                         prefetchVideoId(outF.get(0));
                         if (autoStartDiscover) {
                             autoStartDiscover = false;
-                            playNow(outF.get(0), outF, dj);
+                            if (wakeOrder) {   // uyanma: en sakinden en hareketliye
+                                wakeOrder = false;
+                                List<Track> ord = new ArrayList<>(outF);
+                                ord.sort((x, y) -> Double.compare(Scorer.intensity(x), Scorer.intensity(y)));
+                                playNow(ord.get(0), ord, true);
+                            } else {
+                                playNow(outF.get(0), outF, dj);
+                            }
                         }
                     }
                     notifyChanged();
@@ -1389,6 +1629,7 @@ public final class Engine {
                     s != null ? s.coverUrl : null);
             log("❤️ " + nowArtist + " – " + nowTitle);
         }
+        ensureProfile();
         notifyChanged();
     }
 

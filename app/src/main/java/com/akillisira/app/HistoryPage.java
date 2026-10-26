@@ -45,7 +45,7 @@ public class HistoryPage extends Page {
 
     @Override
     public void render() {
-        int v = e.store.version();
+        int v = e.store.version() * 31 + e.profile().hashCode();
         if (v == renderedVersion) return;
         renderedVersion = v;
         content.removeAllViews();
@@ -129,6 +129,32 @@ public class HistoryPage extends Page {
                 c.addView(barRow(en.getKey(), en.getValue() + " şarkı", en.getValue() / (float) max),
                         Ui.margins(full(), a, 0, i == 0 ? 0 : 12, 0, 0));
             }
+            content.addView(c, full());
+        }
+
+        // ---- Tarz profili ----
+        Map<String, Integer> prof = e.profile();
+        if (!prof.isEmpty()) {
+            content.addView(Ui.section(a, "Tarz profilin"));
+            LinearLayout c = Ui.card(a);
+            TextView info = Ui.text(a, "❤️ ile beğendiğin şarkılardan çıkarıldı; bütün öneriler buna doğru hafifçe kayar.",
+                    12.5f, Ui.TEXT2, Ui.REGULAR);
+            info.setLineSpacing(0, 1.15f);
+            info.setPadding(0, 0, 0, Ui.dp(a, 10));
+            c.addView(info);
+            int i = 0;
+            for (Map.Entry<String, Integer> en : prof.entrySet()) {
+                if (i >= 6) break;
+                c.addView(barRow(en.getKey(), "%" + en.getValue(), en.getValue() / 100f),
+                        Ui.margins(full(), a, 0, i == 0 ? 0 : 12, 0, 0));
+                i++;
+            }
+            TextView go = Ui.secondaryButton(a, "🧭  Tarzıma göre liste hazırla");
+            go.setOnClickListener(x -> {
+                e.discoverProfile();
+                a.showTab(MainActivity.TAB_DISCOVER);
+            });
+            c.addView(go, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 14, 0, 0));
             content.addView(c, full());
         }
 

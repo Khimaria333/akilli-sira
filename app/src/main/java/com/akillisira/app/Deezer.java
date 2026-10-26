@@ -27,6 +27,8 @@ public class Deezer {
     private static final String BASE = "https://api.deezer.com";
     private final Map<Long, Track> detailCache = new ConcurrentHashMap<>();
     private final Map<Long, Object[]> albumCache = new ConcurrentHashMap<>();   // albüm → {genreId, genreName, year}
+    private final DiskCache dTrack = DiskCache.of("dz_track", 8000);
+    private final DiskCache dAlbum = DiskCache.of("dz_album", 5000);
 
     // ---------- Şarkıyı bulma ----------
 
@@ -127,6 +129,25 @@ public class Deezer {
             t.detailsLoaded = true;
             return;
         }
+        String disk = dTrack.get(String.valueOf(t.deezerId), 120 * DiskCache.DAY);
+        if (disk != null) {
+            String[] p = DiskCache.split(disk);
+            try {
+                t.bpm = Double.parseDouble(p[0]);
+                t.gain = p[1].isEmpty() ? Double.NaN : Double.parseDouble(p[1]);
+                if (t.year == 0) t.year = Integer.parseInt(p[2]);
+                if (t.albumId == 0) t.albumId = Long.parseLong(p[3]);
+                if (t.coverUrl == null && !p[4].isEmpty()) t.coverUrl = p[4];
+                if (t.coverBigUrl == null && !p[5].isEmpty()) t.coverBigUrl = p[5];
+                if (t.durationSec == 0) t.durationSec = Integer.parseInt(p[6]);
+                if (t.artistId == 0) t.artistId = Long.parseLong(p[7]);
+                t.detailsLoaded = true;
+                detailCache.put(t.deezerId, t);
+                return;
+            } catch (Exception ignored) {
+                // eski/bozuk kayıt: ağdan al
+            }
+        }
         try {
             JSONObject o = get("/track/" + t.deezerId);
             t.bpm = o.optDouble("bpm", 0);
@@ -148,6 +169,10 @@ public class Deezer {
             }
             t.detailsLoaded = true;
             detailCache.put(t.deezerId, t);
+            dTrack.put(String.valueOf(t.deezerId), DiskCache.join(String.valueOf(t.bpm),
+                    Double.isNaN(t.gain) ? "" : String.valueOf(t.gain), String.valueOf(t.year),
+                    String.valueOf(t.albumId), t.coverUrl, t.coverBigUrl, String.valueOf(t.durationSec),
+                    String.valueOf(t.artistId)));
         } catch (IOException ignored) {
             // detay gelmezse şarkı yine aday kalır, sadece BPM'i bilinmez
         }
@@ -157,6 +182,18 @@ public class Deezer {
     public void fillGenre(Track t) {
         if (t.albumId <= 0 || t.genreId != 0) return;
         Object[] c = albumCache.get(t.albumId);
+        if (c == null) {
+            String disk = dAlbum.get(String.valueOf(t.albumId), 180 * DiskCache.DAY);
+            if (disk != null) {
+                String[] p = DiskCache.split(disk);
+                try {
+                    c = new Object[]{Integer.parseInt(p[0]), p[1].isEmpty() ? null : p[1], Integer.parseInt(p[2])};
+                    albumCache.put(t.albumId, c);
+                } catch (Exception ignored) {
+                    c = null;
+                }
+            }
+        }
         if (c == null) {
             try {
                 JSONObject o = get("/album/" + t.albumId);
@@ -177,6 +214,8 @@ public class Deezer {
                 return;
             }
             albumCache.put(t.albumId, c);
+            dAlbum.put(String.valueOf(t.albumId), DiskCache.join(String.valueOf(c[0]),
+                    (String) c[1], String.valueOf(c[2])));
         }
         t.genreId = (Integer) c[0];
         t.genre = (String) c[1];

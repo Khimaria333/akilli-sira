@@ -25,6 +25,7 @@ public class MainActivity extends Activity implements Engine.Listener {
     public static final int TAB_DISCOVER = 0, TAB_NOW = 1, TAB_HISTORY = 2, TAB_SETTINGS = 3;
     private static final int TABS = 4;
     private static final int REQ_NOTIF = 43;
+    private static final int REQ_EXPORT = 44, REQ_IMPORT = 45;
     private static final int REQ_SPEECH = 42;
 
     private Engine engine;
@@ -43,6 +44,7 @@ public class MainActivity extends Activity implements Engine.Listener {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         installCrashLog();
+        WakeScheduler.schedule(this);   // alarm açıksa bir sonrakini garanti et
         engine = Engine.get(this);
         String crash = getSharedPreferences("ayarlar", MODE_PRIVATE).getString("lastCrash", null);
         if (crash != null) {
@@ -347,11 +349,57 @@ public class MainActivity extends Activity implements Engine.Listener {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if ((requestCode == REQ_EXPORT || requestCode == REQ_IMPORT) && resultCode == RESULT_OK
+                && data != null && data.getData() != null) {
+            final Uri uri = data.getData();
+            final boolean export = requestCode == REQ_EXPORT;
+            new Thread(() -> {
+                String msg;
+                try {
+                    if (export) {
+                        Backup.write(this, engine.store, uri);
+                        msg = "✓ Yedek kaydedildi";
+                    } else {
+                        int[] r = Backup.read(this, engine.store, uri);
+                        msg = "✓ İçe aktarıldı: " + r[0] + " beğeni, " + r[1] + " beğenmeme, " + r[2] + " geçmiş kaydı";
+                    }
+                } catch (Exception ex) {
+                    msg = (export ? "Yedeklenemedi: " : "İçe aktarılamadı: ") + ex.getMessage();
+                }
+                final String m = msg;
+                runOnUiThread(() -> {
+                    toast(m);
+                    WakeScheduler.schedule(this);
+                    engine.refreshNotification();
+                    if (current != null) current.render();
+                });
+            }).start();
+            return;
+        }
         if (requestCode != REQ_SPEECH || resultCode != RESULT_OK || data == null) return;
         ArrayList<String> res = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
         if (res == null || res.isEmpty()) return;
         showTab(TAB_DISCOVER);
         ((DiscoverPage) tabs[TAB_DISCOVER]).onSpeech(res.get(0));
+    }
+
+    /** Yedek dosyasını kaydet (kullanıcı yeri seçer). */
+    public void exportBackup() {
+        String date = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT).format(new java.util.Date());
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/json")
+                .putExtra(Intent.EXTRA_TITLE, "akilli_sira_yedek_" + date + ".json");
+        try { startActivityForResult(i, REQ_EXPORT); } catch (Exception ex) { toast("Dosya seçici açılamadı"); }
+    }
+
+    /** Yedek dosyasını seç ve içe aktar. */
+    public void importBackup() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("*/*")
+                .putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/json", "text/plain", "application/octet-stream"});
+        try { startActivityForResult(i, REQ_IMPORT); } catch (Exception ex) { toast("Dosya seçici açılamadı"); }
     }
 
     public void toast(String msg) {

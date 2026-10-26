@@ -109,6 +109,68 @@ public final class Store {
         } catch (Exception ignored) {}
     }
 
+    // =====================================================================
+    // Yedekleme: dışa / içe aktarma
+    // =====================================================================
+
+    /** Beğeniler, beğenilmeyenler ve geçmiş tek JSON nesnesinde. */
+    public synchronized JSONObject exportJson() throws org.json.JSONException {
+        JSONObject o = new JSONObject();
+        JSONObject lk = new JSONObject();
+        for (Map.Entry<String, ?> en : likes.getAll().entrySet()) lk.put(en.getKey(), String.valueOf(en.getValue()));
+        o.put("likes", lk);
+        JSONObject dk = new JSONObject();
+        for (Map.Entry<String, ?> en : dislikes.getAll().entrySet()) dk.put(en.getKey(), String.valueOf(en.getValue()));
+        o.put("dislikes", dk);
+        org.json.JSONArray pl = new org.json.JSONArray();
+        List<Play> all = plays();
+        for (int i = all.size() - 1; i >= 0; i--) pl.put(toJson(all.get(i)));
+        o.put("plays", pl);
+        return o;
+    }
+
+    /** Var olanlarla birleştirir; {beğeni, beğenmeme, geçmiş} eklenen sayıları döner. */
+    public synchronized int[] importJson(JSONObject o) {
+        int nl = 0, nd = 0, np = 0;
+        JSONObject lk = o.optJSONObject("likes");
+        if (lk != null) {
+            SharedPreferences.Editor ed = likes.edit();
+            org.json.JSONArray names = lk.names();
+            for (int i = 0; names != null && i < names.length(); i++) {
+                String k = names.optString(i);
+                if (!likes.contains(k)) { ed.putString(k, lk.optString(k)); nl++; }
+            }
+            ed.apply();
+        }
+        JSONObject dk = o.optJSONObject("dislikes");
+        if (dk != null) {
+            SharedPreferences.Editor ed = dislikes.edit();
+            org.json.JSONArray names = dk.names();
+            for (int i = 0; names != null && i < names.length(); i++) {
+                String k = names.optString(i);
+                if (!dislikes.contains(k) && !likes.contains(k)) { ed.putString(k, dk.optString(k)); nd++; }
+            }
+            ed.apply();
+        }
+        org.json.JSONArray pl = o.optJSONArray("plays");
+        if (pl != null) {
+            if (plays == null) load();
+            java.util.Set<String> have = new java.util.HashSet<>();
+            for (Play p : plays) have.add(p.ts + "|" + p.title);
+            for (int i = 0; i < pl.length(); i++) {
+                JSONObject j = pl.optJSONObject(i);
+                if (j == null) continue;
+                Play p = fromJson(j);
+                if (have.add(p.ts + "|" + p.title)) { plays.add(p); np++; }
+            }
+            plays.sort((x, y) -> Long.compare(y.ts, x.ts));
+            if (plays.size() > MAX_PLAYS) plays = new ArrayList<>(plays.subList(0, MAX_PLAYS));
+            rewrite();
+        }
+        version++;
+        return new int[]{nl, nd, np};
+    }
+
     private static JSONObject toJson(Play p) {
         JSONObject o = new JSONObject();
         try {

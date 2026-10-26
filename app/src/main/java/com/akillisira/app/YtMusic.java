@@ -26,6 +26,7 @@ public final class YtMusic {
     private static final String SONGS_PARAM = "EgWKAQIIAWoMEA4QChADEAQQCRAF";
     private static final Pattern VIDEO_ID = Pattern.compile("\"videoId\":\"([A-Za-z0-9_-]{11})\"");
     private static final Map<String, String> cache = new ConcurrentHashMap<>();
+    private static final DiskCache disk = DiskCache.of("yt_video", 4000);
 
     public static String watchUrl(String videoId) {
         return "https://music.youtube.com/watch?v=" + videoId;
@@ -36,6 +37,11 @@ public final class YtMusic {
         String q = Text.mainArtist(artist) + " " + Text.cleanTitle(title);
         String hit = cache.get(q);
         if (hit != null) return hit;
+        hit = disk.get(q, 30 * DiskCache.DAY);
+        if (hit != null && !hit.isEmpty()) {
+            cache.put(q, hit);
+            return hit;
+        }
         try {
             String body = "{\"context\":{\"client\":{\"clientName\":\"WEB_REMIX\","
                     + "\"clientVersion\":\"1.20251020.01.00\",\"hl\":\"tr\",\"gl\":\"TR\"}},"
@@ -45,6 +51,7 @@ public final class YtMusic {
             if (m.find()) {
                 String id = m.group(1);
                 cache.put(q, id);
+                disk.put(q, id);
                 return id;
             }
         } catch (IOException ignored) {

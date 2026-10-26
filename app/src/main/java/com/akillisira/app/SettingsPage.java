@@ -9,6 +9,8 @@ import android.widget.LinearLayout;
 import android.widget.Switch;
 import android.widget.TextView;
 
+import java.util.List;
+
 /** Ayarlar, izin durumu, hakkında ve geliştirici kaydı. */
 public class SettingsPage extends Page {
 
@@ -16,6 +18,10 @@ public class SettingsPage extends Page {
     private TextView notifPermBtn;
     private TextView lfmStatus, lfmRemove;
     private android.widget.EditText lfmInput;
+    private Ui.Segmented exploreSeg2, wakeVolSeg;
+    private Switch swWake;
+    private TextView wakeTime, wakeNext, cacheInfo;
+    private final List<TextView> dayChips = new java.util.ArrayList<>();
     private Ui.Segmented fadeSeg, langSeg, modeSeg;
     private TextView methodText, retrySilent;
     private TextView permNotif, permOverlay, permBattery;
@@ -197,7 +203,91 @@ public class SettingsPage extends Page {
         modeSeg = Ui.segmented(a, new String[]{"🌙 Sakin", "〰 Aynı", "⚡ Hareketli"}, e.getMode() + 1,
                 i -> e.setMode(i - 1));
         o.addView(modeSeg.view, full());
+        divider(o);
+        o.addView(Ui.text(a, "Keşif", 15, Ui.TEXT, Ui.BOLD));
+        TextView exd = Ui.text(a, "Tanıdık: bildiğin hitler ağırlıkta · Yeni: az bilinen şarkılar öne çıkar",
+                13, Ui.TEXT2, Ui.REGULAR);
+        exd.setPadding(0, Ui.dp(a, 4), 0, Ui.dp(a, 10));
+        o.addView(exd);
+        exploreSeg2 = Ui.segmented(a, new String[]{"Tanıdık", "Dengeli", "Yeni"}, e.getExplore(), e::setExplore);
+        o.addView(exploreSeg2.view, full());
         body.addView(o, full());
+
+        // ---- Müzikle uyan ----
+        body.addView(Ui.section(a, "Müzikle uyan"));
+        LinearLayout w = Ui.card(a);
+        swWake = switchRow(w, "⏰  Alarm", "Sabah sakin şarkılarla, çok kısık başlar; 2,5 dakikada ses ve tempo yükselir",
+                WakeScheduler.isOn(a), (b, on) -> saveWake(on));
+        LinearLayout tr = Ui.hbox(a);
+        tr.setPadding(0, Ui.dp(a, 10), 0, 0);
+        wakeTime = Ui.text(a, "", 34, Ui.TEXT, Ui.BLACK);
+        wakeTime.setOnClickListener(v -> pickTime());
+        tr.addView(wakeTime, Ui.lpw(1));
+        TextView change = Ui.secondaryButton(a, "Saati değiştir");
+        change.setOnClickListener(v -> pickTime());
+        tr.addView(change);
+        w.addView(tr, full());
+        LinearLayout days = Ui.hbox(a);
+        String[] dn = {"Pt", "Sa", "Ça", "Pe", "Cu", "Ct", "Pz"};
+        for (int i = 0; i < 7; i++) {
+            final int bit = i;
+            TextView ch = Ui.chip(a, dn[i], false);
+            ch.setTextSize(13);
+            ch.setPadding(0, Ui.dp(a, 9), 0, Ui.dp(a, 9));
+            ch.setOnClickListener(v -> {
+                int d = WakeScheduler.days(a) ^ (1 << bit);
+                WakeScheduler.set(a, WakeScheduler.isOn(a), WakeScheduler.hour(a), WakeScheduler.minute(a), d,
+                        WakeScheduler.volumePct(a));
+                render();
+            });
+            LinearLayout.LayoutParams lp = Ui.lpw(1);
+            lp.setMargins(i == 0 ? 0 : Ui.dp(a, 3), 0, 0, 0);
+            days.addView(ch, lp);
+            dayChips.add(ch);
+        }
+        w.addView(days, Ui.margins(full(), a, 0, 12, 0, 0));
+        TextView vl = Ui.text(a, "Uyanma sesi", 13, Ui.TEXT2, Ui.MEDIUM);
+        vl.setPadding(0, Ui.dp(a, 14), 0, Ui.dp(a, 8));
+        w.addView(vl);
+        int vp = WakeScheduler.volumePct(a);
+        wakeVolSeg = Ui.segmented(a, new String[]{"Kısık", "Orta", "Yüksek"}, vp <= 45 ? 0 : vp <= 65 ? 1 : 2, i -> {
+            int pct = i == 0 ? 40 : i == 1 ? 60 : 80;
+            WakeScheduler.set(a, WakeScheduler.isOn(a), WakeScheduler.hour(a), WakeScheduler.minute(a),
+                    WakeScheduler.days(a), pct);
+        });
+        w.addView(wakeVolSeg.view, full());
+        wakeNext = Ui.text(a, "", 13, Ui.ACCENT, Ui.MEDIUM);
+        wakeNext.setPadding(0, Ui.dp(a, 12), 0, 0);
+        w.addView(wakeNext);
+        TextView test = Ui.secondaryButton(a, "Şimdi dene");
+        test.setOnClickListener(v -> a.startActivity(new android.content.Intent(a, WakeActivity.class)));
+        w.addView(test, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 10, 0, 0));
+        TextView wn = Ui.text(a, "Not: Müzik 45 saniyede başlamazsa (ör. internet yoksa) telefonun alarm sesi çalar; "
+                + "uyuya kalmazsın. Gün seçmezsen alarm bir kez çalar.", 12, Ui.TEXT3, Ui.REGULAR);
+        wn.setPadding(0, Ui.dp(a, 10), 0, 0);
+        wn.setLineSpacing(0, 1.12f);
+        w.addView(wn);
+        body.addView(w, full());
+
+        // ---- Yedekleme ----
+        body.addView(Ui.section(a, "Yedekleme"));
+        LinearLayout bk = Ui.card(a);
+        TextView bd = Ui.text(a, "Beğenilerin, beğenmediklerin, geçmişin ve ayarların tek bir dosyaya kaydedilir. "
+                + "Telefon değiştirince bu dosyayı içe aktararak kaldığın yerden devam edebilirsin. "
+                + "(Last.fm anahtarı güvenlik için yedeğe girmez.)", 13, Ui.TEXT2, Ui.REGULAR);
+        bd.setLineSpacing(0, 1.15f);
+        bk.addView(bd);
+        LinearLayout bb = Ui.hbox(a);
+        TextView exp = Ui.primaryButton(a, "Dışa aktar");
+        exp.setOnClickListener(v -> a.exportBackup());
+        bb.addView(exp, Ui.lpw(1));
+        TextView imp = Ui.secondaryButton(a, "İçe aktar");
+        imp.setOnClickListener(v -> a.importBackup());
+        LinearLayout.LayoutParams ilp = Ui.lpw(1);
+        ilp.setMargins(Ui.dp(a, 10), 0, 0, 0);
+        bb.addView(imp, ilp);
+        bk.addView(bb, Ui.margins(full(), a, 0, 12, 0, 0));
+        body.addView(bk, full());
 
         // ---- İzinler ----
         body.addView(Ui.section(a, "İzinler"));
@@ -221,6 +311,18 @@ public class SettingsPage extends Page {
         TextView yt = Ui.secondaryButton(a, "YouTube Music'i aç");
         yt.setOnClickListener(v -> a.openYtMusic());
         h.addView(yt, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 12, 0, 0));
+        divider(h);
+        h.addView(Ui.text(a, "Önbellek", 15, Ui.TEXT, Ui.BOLD));
+        cacheInfo = Ui.text(a, "", 13, Ui.TEXT2, Ui.REGULAR);
+        cacheInfo.setPadding(0, Ui.dp(a, 4), 0, 0);
+        h.addView(cacheInfo);
+        TextView clearC = Ui.secondaryButton(a, "Önbelleği temizle");
+        clearC.setOnClickListener(v -> {
+            DiskCache.clearAll();
+            a.toast("Önbellek temizlendi");
+            render();
+        });
+        h.addView(clearC, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 10, 0, 0));
         body.addView(h, full());
 
         // ---- Kayıt ----
@@ -289,8 +391,33 @@ public class SettingsPage extends Page {
         t.setClickable(!ok);
     }
 
+    private void saveWake(boolean on) {
+        if (on && !WakeScheduler.exactAllowed(a)) {
+            a.toast("Tam zamanlı alarm izni gerekiyor");
+            try {
+                a.startActivity(new android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                        android.net.Uri.parse("package:" + a.getPackageName())));
+            } catch (Exception ignored) {}
+        }
+        WakeScheduler.set(a, on, WakeScheduler.hour(a), WakeScheduler.minute(a), WakeScheduler.days(a),
+                WakeScheduler.volumePct(a));
+        if (on) a.toast("⏰ Alarm kuruldu: " + WakeScheduler.describeNext(a));
+        render();
+    }
+
+    private void pickTime() {
+        new android.app.TimePickerDialog(a, android.R.style.Theme_Material_Dialog_Alert, (tp, hh, mm) -> {
+            WakeScheduler.set(a, true, hh, mm, WakeScheduler.days(a), WakeScheduler.volumePct(a));
+            swWake.setChecked(true);
+            a.toast("⏰ Alarm kuruldu: " + WakeScheduler.describeNext(a));
+            render();
+        }, WakeScheduler.hour(a), WakeScheduler.minute(a), true).show();
+    }
+
     @Override
     public void onShow() {
+        exploreSeg2.select(e.getExplore());
+        swWake.setChecked(WakeScheduler.isOn(a));
         swAuto.setChecked(e.isAuto());
         swFade.setChecked(e.isFade());
         swBack.setChecked(e.isReturnToApp());
@@ -303,6 +430,14 @@ public class SettingsPage extends Page {
 
     @Override
     public void render() {
+        wakeTime.setText(String.format(java.util.Locale.ROOT, "%02d:%02d", WakeScheduler.hour(a), WakeScheduler.minute(a)));
+        wakeTime.setAlpha(WakeScheduler.isOn(a) ? 1f : 0.45f);
+        int dm = WakeScheduler.days(a);
+        for (int i = 0; i < dayChips.size(); i++) Ui.setChip(a, dayChips.get(i), (dm & (1 << i)) != 0);
+        wakeNext.setText(WakeScheduler.isOn(a) ? "Sonraki alarm: " + WakeScheduler.describeNext(a)
+                + (dm == 0 ? " (bir kez)" : "") : "Alarm kapalı");
+        cacheInfo.setText(DiskCache.totalEntries() + " kayıt telefonda saklanıyor. Etiketler ve şarkı bilgileri "
+                + "tekrar sorulmadığı için öneriler daha hızlı hazırlanır.");
         boolean lfOn = e.lastfm.enabled();
         String st = lfOn ? "✓ Bağlı" : "Bağlı değil";
         if (!st.contentEquals(lfmStatus.getText())) {

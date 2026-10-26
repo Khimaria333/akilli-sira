@@ -35,6 +35,66 @@ public class LastFm {
     private final Map<String, List<String[]>> tagTracksCache = new ConcurrentHashMap<>();
     private long lastCall;
 
+    // Telefona kaydedilen önbellek
+    private final DiskCache dArtist = DiskCache.of("lfm_artist", 4000);
+    private final DiskCache dTrack = DiskCache.of("lfm_track", 6000);
+    private final DiskCache dSimilar = DiskCache.of("lfm_similar", 1500);
+    private final DiskCache dTagTop = DiskCache.of("lfm_tagtop", 200);
+
+    private static String encodeTags(Map<String, Integer> m) {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, Integer> en : m.entrySet()) {
+            if (sb.length() > 0) sb.append('\t');
+            sb.append(en.getKey().replace('\t', ' ')).append('\t').append(en.getValue());
+        }
+        return sb.toString();
+    }
+
+    private static Map<String, Integer> decodeTags(String s) {
+        Map<String, Integer> m = new LinkedHashMap<>();
+        if (s == null || s.isEmpty()) return m;
+        String[] p = s.split("\t");
+        for (int i = 0; i + 1 < p.length; i += 2) {
+            try { m.put(p[i], Integer.parseInt(p[i + 1])); } catch (Exception ignored) {}
+        }
+        return m;
+    }
+
+    /** Etiket listesini okur (artist.gettoptags / track.gettoptags yanıtı). */
+    private static Map<String, Integer> parseTags(JSONObject o) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        JSONObject tt = o.optJSONObject("toptags");
+        JSONArray arr = tt != null ? tt.optJSONArray("tag") : null;
+        if (arr != null) {
+            for (int i = 0; i < arr.length() && out.size() < 15; i++) {
+                JSONObject t = arr.optJSONObject(i);
+                if (t == null) continue;
+                String name = t.optString("name").toLowerCase(Locale.forLanguageTag("tr")).trim();
+                int count = t.optInt("count");
+                if (name.isEmpty() || count < 5 || NOISE.contains(name)) continue;
+                out.put(name, count);
+            }
+        }
+        return out;
+    }
+
+    /** Şarkının kendi etiketleri (ruh hali için daha isabetli). Boş olabilir. */
+    public Map<String, Integer> trackTags(String artist, String title) {
+        if (!enabled() || artist == null || title == null) return Collections.emptyMap();
+        String k = Text.norm(Text.mainArtist(artist)) + "|" + Text.norm(title);
+        String disk = dTrack.get(k, 45 * DiskCache.DAY);
+        if (disk != null) return decodeTags(disk);
+        Map<String, Integer> out;
+        try {
+            out = parseTags(call("track.gettoptags", "&autocorrect=1&artist=" + enc(Text.mainArtist(artist))
+                    + "&track=" + enc(Text.cleanTitle(title))));
+        } catch (IOException e) {
+            return Collections.emptyMap();
+        }
+        dTrack.put(k, encodeTags(out));
+        return out;
+    }
+
     public void setKey(String k) {
         key = k == null || k.trim().isEmpty() ? null : k.trim();
     }
@@ -58,25 +118,20 @@ public class LastFm {
         String k = Text.norm(Text.mainArtist(artist));
         Map<String, Integer> c = tagCache.get(k);
         if (c != null) return c;
-        Map<String, Integer> out = new LinkedHashMap<>();
+        String disk = dArtist.get(k, 30 * DiskCache.DAY);
+        if (disk != null) {
+            Map<String, Integer> m = decodeTags(disk);
+            tagCache.put(k, m);
+            return m;
+        }
+        Map<String, Integer> out;
         try {
-            JSONObject o = call("artist.gettoptags", "&autocorrect=1&artist=" + enc(Text.mainArtist(artist)));
-            JSONObject tt = o.optJSONObject("toptags");
-            JSONArray arr = tt != null ? tt.optJSONArray("tag") : null;
-            if (arr != null) {
-                for (int i = 0; i < arr.length() && out.size() < 15; i++) {
-                    JSONObject t = arr.optJSONObject(i);
-                    if (t == null) continue;
-                    String name = t.optString("name").toLowerCase(Locale.forLanguageTag("tr")).trim();
-                    int count = t.optInt("count");
-                    if (name.isEmpty() || count < 5 || NOISE.contains(name)) continue;
-                    out.put(name, count);
-                }
-            }
+            out = parseTags(call("artist.gettoptags", "&autocorrect=1&artist=" + enc(Text.mainArtist(artist))));
         } catch (IOException e) {
             return Collections.emptyMap();   // ağ hatası: önbelleğe yazma, sonra tekrar dene
         }
         tagCache.put(k, out);
+        dArtist.put(k, encodeTags(out));
         return out;
     }
 
@@ -86,6 +141,13 @@ public class LastFm {
         String k = Text.norm(Text.mainArtist(artist));
         List<String> c = similarCache.get(k);
         if (c != null) return c;
+        String disk = dSimilar.get(k, 30 * DiskCache.DAY);
+        if (disk != null) {
+            List<String> l = new ArrayList<>();
+            if (!disk.isEmpty()) Collections.addAll(l, disk.split("\t"));
+            similarCache.put(k, l);
+            return l;
+        }
         List<String> out = new ArrayList<>();
         try {
             JSONObject o = call("artist.getsimilar", "&autocorrect=1&limit=" + limit + "&artist=" + enc(Text.mainArtist(artist)));
@@ -101,6 +163,7 @@ public class LastFm {
             return Collections.emptyList();
         }
         similarCache.put(k, out);
+        dSimilar.put(k, String.join("\t", out));
         return out;
     }
 
@@ -110,6 +173,14 @@ public class LastFm {
         String k = tag.toLowerCase(Locale.ROOT) + "|" + limit;
         List<String[]> c = tagTracksCache.get(k);
         if (c != null) return c;
+        String disk = dTagTop.get(k, 7 * DiskCache.DAY);
+        if (disk != null) {
+            List<String[]> l = new ArrayList<>();
+            String[] p = disk.isEmpty() ? new String[0] : disk.split("\t");
+            for (int i = 0; i + 1 < p.length; i += 2) l.add(new String[]{p[i], p[i + 1]});
+            tagTracksCache.put(k, l);
+            return l;
+        }
         List<String[]> out = new ArrayList<>();
         try {
             JSONObject o = call("tag.gettoptracks", "&limit=" + limit + "&tag=" + enc(tag));
@@ -129,6 +200,12 @@ public class LastFm {
             return Collections.emptyList();
         }
         tagTracksCache.put(k, out);
+        StringBuilder sb = new StringBuilder();
+        for (String[] at : out) {
+            if (sb.length() > 0) sb.append('\t');
+            sb.append(at[0].replace('\t', ' ')).append('\t').append(at[1].replace('\t', ' '));
+        }
+        dTagTop.put(k, sb.toString());
         return out;
     }
 
@@ -221,7 +298,7 @@ public class LastFm {
         return best;
     }
 
-    private static boolean isLangTag(String t) {
+    public static boolean isLangTag(String t) {
         return t.equals("turkish") || t.equals("türkçe") || t.equals("turkce") || t.equals("türk") || t.equals("turkey")
                 || t.equals("greek") || t.equals("english") || t.equals("american") || t.equals("british");
     }
