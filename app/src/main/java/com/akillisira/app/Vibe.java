@@ -35,44 +35,44 @@ public final class Vibe {
     static final Scene[] SCENES = {
         new Scene("sahil", "Sahil", "🏖️", "sakin", -0.02, -0.5,
                 a("sahil", "deniz", "kumsal", "plaj", "kıyı", "iskele", "dalga", "marina"),
-                a("türkçe yaz akşamı", "türkçe deniz şarkıları"), a("beach vibes", "summer chill")),
+                a("yaz şarkıları", "türkçe chill", "sahil"), a("beach vibes", "summer chill")),
         new Scene("gunbatimi", "Gün batımı", "🌅", "sakin", -0.03, -0.5,
                 a("gün batımı", "günbatımı", "akşamüstü", "akşam üstü", "akşamüzeri", "akşam üzeri", "gurup"),
-                a("akşamüstü türkçe", "gün batımı türkçe"), a("sunset chill", "golden hour")),
+                a("türkçe chill", "türkçe akustik", "gün batımı"), a("sunset chill", "golden hour")),
         new Scene("aksam", "Akşam", "🌆", "sakin", -0.02, -0.5,
                 a("akşam"),
-                a("akşam türkçe şarkılar"), a("evening chill")),
+                a("türkçe chill", "türkçe akustik"), a("evening chill")),
         new Scene("gece", "Gece", "🌃", "sakin", -0.03, -1.0,
                 a("gece", "geceyarısı", "gece yarısı", "geç saat", "uykusuz"),
-                a("gece türkçe şarkılar", "gece yarısı türkçe"), a("late night vibes", "night drive")),
+                a("türkçe slow", "gece", "türkçe akustik"), a("late night vibes", "night drive")),
         new Scene("sabah", "Sabah", "☀️", "mutlu", 0.02, 0.0,
                 a("sabah", "kahvaltı", "uyandım", "güne başla", "günaydın"),
-                a("günaydın türkçe", "sabah türkçe şarkılar"), a("morning acoustic", "good morning")),
+                a("günaydın", "türkçe pop hit", "türkçe akustik"), a("morning acoustic", "good morning")),
         new Scene("yagmur", "Yağmur", "🌧️", "huzunlu", -0.03, -1.0,
                 a("yağmur", "kapalı hava", "bulutlu", "fırtına", "gri hava"),
-                a("yağmurlu gün türkçe", "yağmur türkçe şarkılar"), a("rainy day", "rainy jazz")),
+                a("türkçe slow", "hüzünlü türkçe", "yağmur"), a("rainy day", "rainy jazz")),
         new Scene("kahve", "Kahve", "☕", "sakin", -0.02, -1.0,
                 a("kahve", "kafe", "cafe", "çay", "kitapçı", "kitap okurken"),
-                a("kahve eşliğinde türkçe", "türkçe akustik kahve"), a("coffee shop acoustic", "cafe music")),
+                a("türkçe akustik", "kahve", "türkçe chill"), a("coffee shop acoustic", "cafe music")),
         new Scene("yaz", "Yaz", "🌞", "mutlu", 0.03, 0.5,
                 a("yaz ", "yazın", "yaz akşam", "yaz gece", "tatil", "havuz", "güneşli", "sıcak"),
-                a("türkçe yaz şarkıları", "yaz hitleri türkçe"), a("summer hits", "summer vibes")),
+                a("yaz şarkıları", "yaz hitleri", "türkçe pop hit"), a("summer hits", "summer vibes")),
         new Scene("kis", "Kış", "❄️", "sakin", -0.02, -0.5,
                 a("kış", "kar ", "karlı", "soğuk", "şömine", "battaniye"),
-                a("kış türkçe şarkılar"), a("winter chill", "cozy acoustic")),
+                a("türkçe akustik", "türkçe slow"), a("winter chill", "cozy acoustic")),
         new Scene("doga", "Doğa", "🌲", "sakin", -0.02, -0.5,
                 a("doğa", "orman", "kamp", "dağ", "göl", "piknik", "bahçe", "ağaç"),
-                a("kamp ateşi türkçe", "türkçe akustik"), a("camping acoustic", "indie folk")),
+                a("türkçe akustik", "kamp", "türkçe alternatif"), a("camping acoustic", "indie folk")),
         new Scene("meyhane", "Rakı masası", "🥂", "nostaljik", -0.02, -0.5,
                 a("rakı", "meyhane", "fasıl", "rakı masası"),
                 a("rakı masası şarkıları", "türk sanat müziği", "fasıl", "arabesk"),
                 a("rakı masası şarkıları", "türk sanat müziği")),
         new Scene("arkadas", "Arkadaşlar", "🍻", "mutlu", 0.02, 0.5,
                 a("arkadaş", "kanka", "mangal", "muhabbet", "dostlar", "ekiple"),
-                a("arkadaşlarla türkçe şarkılar", "türkçe pop hit"), a("friends hangout", "feel good hits")),
+                a("türkçe pop hit", "eğlenceli türkçe", "parti"), a("friends hangout", "feel good hits")),
         new Scene("yemek", "Akşam yemeği", "🍷", "romantik", -0.03, -1.0,
                 a("yemek", "akşam yemeği", "şarap", "restoran", "mum ışığı"),
-                a("akşam yemeği türkçe", "türkçe caz"), a("dinner jazz", "dinner party")),
+                a("türkçe caz", "türkçe akustik", "romantik türkçe"), a("dinner jazz", "dinner party")),
     };
 
     /** Sahnelerin Last.fm etiketleri. */
@@ -175,7 +175,7 @@ public final class Vibe {
             for (int i = 0; i < scenes.size() && i < 2; i++) {
                 Scene sc = scenes.get(i);
                 String[] sq = turkish ? sc.qTr : sc.qGl;
-                for (int j = 0; j < sq.length && j < (sceneOnly ? 4 : 1); j++) if (!q.contains(sq[j])) q.add(sq[j]);
+                for (int j = 0; j < sq.length && j < (sceneOnly ? 4 : 2); j++) if (!q.contains(sq[j])) q.add(sq[j]);
                 String[] st = SCENE_TAGS.get(sc.id);
                 if (st != null) for (String x : st) if (!tg.contains(x)) tg.add(x);
             }

@@ -307,15 +307,32 @@ public class Deezer {
     }
 
     /** GET + JSON. Deezer'in "Quota limit exceeded" hatasında biraz bekleyip tekrar dener. */
+    // Tüm Deezer istekleri için ortak hız sınırı: en fazla ~8 istek/sn (sınır 10/sn)
+    private static final Object PACE = new Object();
+    private static long nextSlot;
+
+    private static void pace() {
+        long wait;
+        synchronized (PACE) {
+            long now = System.currentTimeMillis();
+            long slot = Math.max(now, nextSlot);
+            nextSlot = slot + 120;
+            wait = slot - now;
+        }
+        if (wait > 0) sleep(wait);
+    }
+
     JSONObject get(String path) throws IOException {
         IOException last = null;
-        for (int attempt = 0; attempt < 4; attempt++) {
+        for (int attempt = 0; attempt < 5; attempt++) {
+            pace();
             try {
                 JSONObject o = new JSONObject(httpGet(BASE + path));
                 JSONObject err = o.optJSONObject("error");
                 if (err != null) {
-                    if (err.optInt("code") == 4) { // hız sınırı
-                        sleep(1200L * (attempt + 1));
+                    if (err.optInt("code") == 4) { // hız sınırı: biraz bekle, tekrar dene
+                        last = new IOException("Deezer çok yoğun");
+                        sleep(2000L * (attempt + 1));
                         continue;
                     }
                     if (err.optInt("code") == 800) return new JSONObject(); // bulunamadı

@@ -1427,7 +1427,7 @@ public final class Engine {
                     }
                 } else {
                     boolean useTags = lastfm.enabled() && !target.tags.isEmpty();
-                    int maxQ = useTags ? 2 : 3;
+                    int maxQ = 3;
                     for (int i = 0; i < target.queries.size() && i < maxQ; i++) {
                         pool.addAll(playlistPool(target.queries.get(i), turkish, 2, 40));
                     }
@@ -1458,7 +1458,20 @@ public final class Engine {
                         }
                     }
                 }
-                if (pool.isEmpty()) throw new Exception("Deezer'den liste alınamadı");
+                int fromPrimary = pool.size();
+                // Yeterli aday yoksa genel listelerle tamamla (sıralamayı yine ruh hali etiketleri belirler)
+                if (pool.size() < 25 && favorites == null) {
+                    stage(gen, "Daha fazla şarkı aranıyor…");
+                    String[] fb = turkish
+                            ? new String[]{"türkçe pop hit", "türkçe akustik", "türkçe slow", "türkçe hareketli"}
+                            : new String[]{"pop hits", "chill hits", "feel good hits"};
+                    for (String q : fb) {
+                        if (pool.size() >= 60) break;
+                        pool.addAll(playlistPool(q, turkish, 1, 50));
+                    }
+                }
+                log("Keşfet: " + fromPrimary + " aday (+" + (pool.size() - fromPrimary) + " yedek)");
+                if (pool.isEmpty()) throw new Exception("NET");
                 List<Track> list = dedupe(pool, "", hist);
                 classifyLanguages(list);
                 if (turkish) list = keepTurkish(list);
@@ -1517,7 +1530,9 @@ public final class Engine {
                     discoverDj = dj;
                     discoverCurve = curveF;
                     if (outF.isEmpty()) {
-                        discoverProblem = "Bu seçimle şarkı bulunamadı, başka bir şey dene.";
+                        discoverProblem = turkish
+                                ? "Bu tarife uyan Türkçe şarkı bulunamadı. Biraz farklı anlatmayı ya da Global'i dene."
+                                : "Bu tarife uyan şarkı bulunamadı. Biraz farklı anlatmayı dene.";
                         autoStartDiscover = false;
                     } else {
                         prefetchVideoId(outF.get(0));
@@ -1541,7 +1556,10 @@ public final class Engine {
                     if (gen != discoverGeneration) return;
                     discoverLoading = false;
                     autoStartDiscover = false;
-                    discoverProblem = "Öneriler alınamadı: " + msg;
+                    discoverProblem = "NET".equals(msg)
+                            ? "Müzik servislerine şu an ulaşılamıyor. İnternet bağlantını kontrol edip tekrar dene."
+                            : "Öneriler alınamadı: " + msg;
+                    log("Keşfet hatası: " + msg);
                     notifyChanged();
                 });
             }
