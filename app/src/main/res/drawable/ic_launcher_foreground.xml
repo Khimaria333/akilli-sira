@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Ekolayzer çubukları -->
+    <path android:fillColor="#FFFFFF" android:pathData="M34,47h6v16h-6z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M43,40h6v30h-6z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M52,35h6v40h-6z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M61,42h6v26h-6z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M70,48h6v14h-6z" />
+    <!-- Küçük parıltı -->
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.9"
+        android:pathData="M74,30l1.6,4.4l4.4,1.6l-4.4,1.6l-1.6,4.4l-1.6,-4.4l-4.4,-1.6l4.4,-1.6z" />
+</vector>

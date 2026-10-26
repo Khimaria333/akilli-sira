@@ -94,6 +94,23 @@ public class Deezer {
         return out;
     }
 
+    /** Ruh hali / dil sorgusuyla çalma listesi bulur (en az 20 şarkılı olanlar). */
+    public List<Long> searchPlaylists(String q, int limit) throws IOException {
+        JSONObject r = get("/search/playlist?limit=" + (limit * 3) + "&q=" + enc(q));
+        List<Long> out = new ArrayList<>();
+        JSONArray data = r.optJSONArray("data");
+        if (data == null) return out;
+        for (int i = 0; i < data.length() && out.size() < limit; i++) {
+            JSONObject o = data.optJSONObject(i);
+            if (o != null && o.optInt("nb_tracks") >= 20) out.add(o.optLong("id"));
+        }
+        return out;
+    }
+
+    public List<Track> playlistTracks(long playlistId, int limit, String source) throws IOException {
+        return parseTracks(get("/playlist/" + playlistId + "/tracks?limit=" + limit), source);
+    }
+
     // ---------- BPM / enerji ----------
 
     /** /track/{id} çağrısıyla BPM ve ses yüksekliğini doldurur (önbellekli). */
@@ -103,6 +120,7 @@ public class Deezer {
         if (cached != null) {
             t.bpm = cached.bpm;
             t.gain = cached.gain;
+            if (t.coverUrl == null) { t.coverUrl = cached.coverUrl; t.coverBigUrl = cached.coverBigUrl; }
             t.detailsLoaded = true;
             return;
         }
@@ -111,6 +129,13 @@ public class Deezer {
             t.bpm = o.optDouble("bpm", 0);
             t.gain = o.has("gain") ? o.optDouble("gain", Double.NaN) : Double.NaN;
             if (t.durationSec == 0) t.durationSec = o.optInt("duration");
+            if (t.coverUrl == null) {
+                JSONObject al = o.optJSONObject("album");
+                if (al != null) {
+                    t.coverUrl = emptyToNull(al.optString("cover_medium"));
+                    t.coverBigUrl = emptyToNull(al.optString("cover_xl"));
+                }
+            }
             if (t.artistId == 0) {
                 JSONObject ar = o.optJSONObject("artist");
                 if (ar != null) t.artistId = ar.optLong("id");
@@ -124,7 +149,7 @@ public class Deezer {
 
     /** Birçok şarkının detayını paralel ama Deezer'in hız sınırını aşmadan çeker. */
     public void fillDetailsAll(List<Track> tracks) {
-        ExecutorService pool = Executors.newFixedThreadPool(3);
+        ExecutorService pool = Executors.newFixedThreadPool(4);
         try {
             List<Future<?>> fs = new ArrayList<>();
             for (Track t : tracks) fs.add(pool.submit(() -> fillDetails(t)));
@@ -156,10 +181,20 @@ public class Deezer {
                 t.artist = ar.optString("name");
                 t.artistId = ar.optLong("id");
             }
+            JSONObject al = o.optJSONObject("album");
+            if (al != null) {
+                t.coverUrl = emptyToNull(al.optString("cover_medium"));
+                t.coverBigUrl = emptyToNull(al.optString("cover_xl"));
+                if (t.coverBigUrl == null) t.coverBigUrl = emptyToNull(al.optString("cover_big"));
+            }
             if (source != null) t.sources.add(source);
             if (t.deezerId > 0 && !t.title.isEmpty()) out.add(t);
         }
         return out;
+    }
+
+    private static String emptyToNull(String s) {
+        return s == null || s.isEmpty() || "null".equals(s) ? null : s;
     }
 
     private static String enc(String s) {

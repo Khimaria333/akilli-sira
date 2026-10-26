@@ -10,14 +10,19 @@ public class Track {
     public String artist = "";
     public long artistId;
     public int durationSec;
-    public int rank;               // Deezer popülerliği (0 - ~1.000.000)
-    public double bpm = 0;         // 0 = bilinmiyor
-    public double gain = Double.NaN; // ses yüksekliği (dB), enerji için yaklaşık ölçü
+    public int rank;                   // Deezer popülerliği (0 - ~1.000.000)
+    public double bpm = 0;             // 0 = bilinmiyor
+    public double gain = Double.NaN;   // ses yüksekliği (dB), enerji için yaklaşık ölçü
     public boolean detailsLoaded;
-    public volatile String videoId;  // YT Music'teki karşılığı (bulunduysa)
+    public String coverUrl;            // albüm kapağı (küçük)
+    public String coverBigUrl;         // albüm kapağı (büyük)
+    public int lang = Lang.UNKNOWN;
+    public volatile String videoId;    // YT Music'teki karşılığı
 
-    /** Nereden geldi: "same" (aynı sanatçı), "related" (benzer sanatçı), "radio" (sanatçı radyosu) */
+    /** Kaynaklar: "same" aynı sanatçı, "related" benzer sanatçı, "radio" sanatçı radyosu,
+     *  "mood" ruh hali / dil çalma listesi, "plan" Keşfet'te seçilen liste */
     public final Set<String> sources = new LinkedHashSet<>();
+    public boolean fromTurkishList;    // Türkçe sorgudan gelen çalma listesinde bulundu
 
     public double score;
     public String reason = "";
@@ -32,6 +37,12 @@ public class Track {
 
     public boolean hasGain() {
         return !Double.isNaN(gain) && gain != 0;
+    }
+
+    /** Enerji 0..1 (ses yüksekliğinden kabaca): -14 dB → 0, -4 dB → 1 */
+    public double energy() {
+        if (!hasGain()) return -1;
+        return Math.max(0, Math.min(1, (gain + 14) / 10.0));
     }
 
     @Override

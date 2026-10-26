@@ -4,333 +4,223 @@ import android.app.Activity;
 import android.app.NotificationManager;
 import android.content.ComponentName;
 import android.content.Intent;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.provider.Settings;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.Button;
+import android.view.Window;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
-import android.widget.RadioButton;
-import android.widget.RadioGroup;
-import android.widget.ScrollView;
-import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.Toast;
 
-import java.util.List;
-import java.util.Locale;
-
-/** Tek ekranlık arayüz: durum, çalan şarkı, sıradaki, alternatifler, ayarlar, kayıt. */
+/** Tek aktivite: kurulum ya da alt menülü üç sekme (Keşfet / Şimdi / Ayarlar). */
 public class MainActivity extends Activity implements Engine.Listener {
 
-    private static final int ACCENT = 0xFFE8505B;
+    public static final int TAB_DISCOVER = 0, TAB_NOW = 1, TAB_SETTINGS = 2;
 
     private Engine engine;
-
-    private LinearLayout setupCard;
-    private TextView setupText;
-    private Button overlayBtn;
-    private TextView statusText;
-    private TextView nowTitle, nowInfo;
-    private ProgressBar nowProgress;
-    private TextView pickTitle, pickInfo;
-    private Button skipBtn;
-    private LinearLayout altBox;
-    private TextView logText;
-    private Switch autoSwitch;
-    private RadioGroup modeGroup;
-
-    private List<Track> renderedAlts;
+    private FrameLayout container;
+    private LinearLayout nav;
+    private Page setup;
+    private Page[] tabs;
+    private Page current;
+    private int currentTab = -1;
+    private final LinearLayout[] navItems = new LinearLayout[3];
+    private final Views.Icon[] navIcons = new Views.Icon[3];
+    private final TextView[] navLabels = new TextView[3];
+    private boolean setupDone;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         engine = Engine.get(this);
-        setContentView(buildUi());
+        Window w = getWindow();
+        w.setStatusBarColor(Ui.BG);
+        w.setNavigationBarColor(Ui.SURFACE);
+
+        setup = new SetupPage(this, engine);
+        tabs = new Page[]{new DiscoverPage(this, engine), new NowPage(this, engine), new SettingsPage(this, engine)};
+
+        LinearLayout root = Ui.vbox(this);
+        root.setBackgroundColor(Ui.BG);
+        container = new FrameLayout(this);
+        root.addView(container, new LinearLayout.LayoutParams(Ui.MATCH, 0, 1));
+        nav = buildNav();
+        root.addView(nav, Ui.lp(Ui.MATCH, Ui.WRAP));
+        setContentView(root);
+
+        setupDone = getSharedPreferences("ayarlar", MODE_PRIVATE).getBoolean("setupDone", false);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         engine.addListener(this);
-        render();
+        engine.setUiVisible(true);
+        boolean ready = hasNotificationAccess() && canOverlay();
+        if (!ready || !setupDone) {
+            showSetup();
+        } else if (currentTab < 0) {
+            showTab(engine.nowTitle != null ? TAB_NOW : TAB_DISCOVER);
+        } else {
+            current.onShow();
+            current.render();
+        }
     }
 
     @Override
     protected void onPause() {
         engine.removeListener(this);
+        engine.setUiVisible(false);
         super.onPause();
     }
 
     @Override
     public void onEngineChanged() {
-        render();
+        if (current != null) current.render();
     }
 
-    // ================= Arayüzü kur =================
+    @Override
+    public void onBackPressed() {
+        if (current != setup && currentTab != TAB_NOW && engine.nowTitle != null) {
+            showTab(TAB_NOW);
+        } else {
+            super.onBackPressed();
+        }
+    }
 
-    private View buildUi() {
-        ScrollView scroll = new ScrollView(this);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        int p = dp(16);
-        root.setPadding(p, dp(20), p, dp(32));
-        scroll.addView(root);
+    // ================= Gezinme =================
 
-        TextView h = text("Akıllı Sıra", 26, true);
-        root.addView(h);
-        statusText = text("", 13, false);
-        statusText.setAlpha(0.75f);
-        root.addView(statusText);
+    private void showSetup() {
+        nav.setVisibility(View.GONE);
+        swap(setup);
+        currentTab = -1;
+    }
 
-        // Kurulum kartı (izin yoksa görünür)
-        setupCard = card();
-        setupText = text("", 14, false);
-        setupCard.addView(setupText);
-        Button permBtn = button("Bildirim erişimini aç");
-        permBtn.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
-        setupCard.addView(permBtn);
-        Button appInfoBtn = button("Uygulama bilgisi (kısıtlı ayarlar)");
-        appInfoBtn.setOnClickListener(v -> {
-            Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-            i.setData(android.net.Uri.parse("package:" + getPackageName()));
-            startActivity(i);
-        });
-        setupCard.addView(appInfoBtn);
-        overlayBtn = button("Diğer uygulamaların üzerinde göster iznini aç");
-        overlayBtn.setOnClickListener(v -> {
-            Intent i = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);
-            i.setData(android.net.Uri.parse("package:" + getPackageName()));
-            startActivity(i);
-        });
-        setupCard.addView(overlayBtn);
-        root.addView(setupCard);
+    public void finishSetup() {
+        setupDone = true;
+        getSharedPreferences("ayarlar", MODE_PRIVATE).edit().putBoolean("setupDone", true).apply();
+        showTab(engine.nowTitle != null ? TAB_NOW : TAB_DISCOVER);
+    }
 
-        // Şu an çalan
-        LinearLayout nowCard = card();
-        nowCard.addView(label("ŞU AN ÇALAN"));
-        nowTitle = text("—", 18, true);
-        nowCard.addView(nowTitle);
-        nowInfo = text("", 13, false);
-        nowInfo.setAlpha(0.8f);
-        nowCard.addView(nowInfo);
-        nowProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        nowProgress.setMax(1000);
-        nowProgress.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));
-        nowCard.addView(nowProgress, new LinearLayout.LayoutParams(-1, dp(12)));
-        Button openYtm = button("YT Music'i aç");
-        openYtm.setOnClickListener(v -> {
-            Intent i = getPackageManager().getLaunchIntentForPackage(Engine.YTM);
-            if (i != null) startActivity(i);
-            else engine.log("YT Music bu telefonda bulunamadı");
-        });
-        nowCard.addView(openYtm);
-        root.addView(nowCard);
-
-        // Sıradaki
-        LinearLayout pickCard = card();
-        GradientDrawable bg = (GradientDrawable) pickCard.getBackground();
-        bg.setStroke(dp(2), ACCENT);
-        pickCard.addView(label("SIRADAKİ"));
-        pickTitle = text("—", 18, true);
-        pickCard.addView(pickTitle);
-        pickInfo = text("", 13, false);
-        pickInfo.setAlpha(0.8f);
-        pickCard.addView(pickInfo);
-        skipBtn = button("Şimdi geç ▶");
-        skipBtn.setOnClickListener(v -> engine.skipNow(this));
-        pickCard.addView(skipBtn);
-        root.addView(pickCard);
-
-        // Alternatifler
-        root.addView(label("DİĞER UYGUN ŞARKILAR (dokun → sıradaki yap)"));
-        altBox = new LinearLayout(this);
-        altBox.setOrientation(LinearLayout.VERTICAL);
-        root.addView(altBox);
-
-        // Ayarlar
-        LinearLayout settings = card();
-        settings.addView(label("AYARLAR"));
-        autoSwitch = new Switch(this);
-        autoSwitch.setText("Şarkı bitince otomatik geç");
-        autoSwitch.setChecked(engine.isAuto());
-        autoSwitch.setOnCheckedChangeListener((b, on) -> engine.setAuto(on));
-        settings.addView(autoSwitch);
-
-        TextView modeLbl = text("Hava", 14, true);
-        modeLbl.setPadding(0, dp(12), 0, dp(4));
-        settings.addView(modeLbl);
-        modeGroup = new RadioGroup(this);
-        modeGroup.setOrientation(RadioGroup.HORIZONTAL);
-        String[] names = {"Sakinleştir", "Aynı kalsın", "Hareketlendir"};
-        int[] modes = {-1, 0, 1};
+    public void showTab(int tab) {
+        nav.setVisibility(View.VISIBLE);
+        currentTab = tab;
+        swap(tabs[tab]);
         for (int i = 0; i < 3; i++) {
-            RadioButton rb = new RadioButton(this);
-            rb.setText(names[i]);
-            rb.setId(View.generateViewId());
-            rb.setTag(modes[i]);
-            modeGroup.addView(rb);
-            if (modes[i] == engine.getMode()) rb.setChecked(true);
+            boolean on = i == tab;
+            navIcons[i].setColor(on ? Ui.TEXT : Ui.TEXT3);
+            navLabels[i].setTextColor(on ? Ui.TEXT : Ui.TEXT3);
+            navLabels[i].setTypeface(on ? Ui.BOLD : Ui.MEDIUM);
+            View pillBg = navItems[i].getChildAt(0);
+            pillBg.setBackground(on ? Ui.gradient(this, 0x55FF4D6D, 0x557B5CFF, 16) : null);
         }
-        modeGroup.setOnCheckedChangeListener((g, id) -> {
-            View v = g.findViewById(id);
-            if (v != null) engine.setMode((Integer) v.getTag());
-        });
-        settings.addView(modeGroup);
-        root.addView(settings);
-
-        // Kayıt
-        root.addView(label("KAYIT"));
-        logText = text("", 12, false);
-        logText.setTypeface(Typeface.MONOSPACE);
-        logText.setAlpha(0.75f);
-        root.addView(logText);
-
-        return scroll;
     }
 
-    // ================= Ekranı güncelle =================
-
-    private void render() {
-        boolean perm = hasNotificationAccess();
-        boolean overlay = Settings.canDrawOverlays(this);
-        setupCard.setVisibility(perm && overlay && engine.serviceConnected ? View.GONE : View.VISIBLE);
-        overlayBtn.setVisibility(overlay ? View.GONE : View.VISIBLE);
-        StringBuilder st = new StringBuilder();
-        if (!perm) {
-            st.append("1) \"Bildirim erişimini aç\" düğmesine bas ve Akıllı Sıra'yı aç.\n"
-                    + "Anahtar gri ise: \"Uygulama bilgisi\" → sağ üst ⋮ → \"Kısıtlanmış ayarlara izin ver\", sonra tekrar dene.\n\n");
-        } else if (!engine.serviceConnected) {
-            st.append("Bildirim izni verildi, servis başlatılıyor… Düzelmezse izni kapatıp tekrar aç.\n\n");
+    private void swap(Page p) {
+        View v = p.view();
+        if (current != p) {
+            container.removeAllViews();
+            container.addView(v, new FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH));
+            v.setAlpha(0f);
+            v.setTranslationY(Ui.dp(this, 8));
+            v.animate().alpha(1f).translationY(0).setDuration(200).start();
+            current = p;
         }
-        if (!overlay) {
-            st.append("2) Şarkı bitince YT Music'te sıradakini açabilmesi için "
-                    + "\"Diğer uygulamaların üzerinde göster\" iznini aç.");
-        }
-        setupText.setText(st.toString().trim());
-
-        String status;
-        if (!perm) status = "Kurulum gerekiyor";
-        else if (engine.controller == null) status = "YT Music'te bir şarkı aç";
-        else status = (engine.isAuto() ? "Otomatik mod açık" : "Otomatik mod kapalı")
-                + (engine.supportsPlayFromSearch() ? "" : " · YT Music arama ile çalmayı bildirmiyor, yine de denenecek");
-        statusText.setText(status);
-
-        // Şu an çalan
-        if (engine.nowTitle != null) {
-            nowTitle.setText(engine.nowTitle);
-            StringBuilder sb = new StringBuilder(engine.nowArtist == null ? "" : engine.nowArtist);
-            if (engine.seed != null) {
-                sb.append("\n").append(describe(engine.seed));
-            }
-            sb.append("\n").append(time(engine.nowPositionMs)).append(" / ").append(time(engine.nowDurationMs));
-            if (!engine.playing) sb.append("  (duraklatıldı)");
-            nowInfo.setText(sb.toString());
-            nowProgress.setProgress(engine.nowDurationMs > 0
-                    ? (int) (1000 * engine.nowPositionMs / engine.nowDurationMs) : 0);
-        } else {
-            nowTitle.setText("—");
-            nowInfo.setText("YT Music'te çalan şarkı burada görünecek.");
-            nowProgress.setProgress(0);
-        }
-
-        // Sıradaki
-        Track pk = engine.pick;
-        if (engine.computing) {
-            pickTitle.setText("Hesaplanıyor…");
-            pickInfo.setText("BPM ve enerji bilgileri alınıyor");
-        } else if (pk != null) {
-            pickTitle.setText(pk.artist + " – " + pk.title);
-            pickInfo.setText(pk.reason + "\n" + describe(pk)
-                    + (pk.videoId != null ? " · YT Music bağlantısı hazır ✓" : " · YT Music'te aranıyor…"));
-        } else {
-            pickTitle.setText("—");
-            pickInfo.setText(engine.problem != null ? engine.problem : "");
-        }
-        skipBtn.setEnabled(pk != null && engine.controller != null);
-
-        // Alternatifler (sadece liste değişince yeniden çiz)
-        if (renderedAlts != engine.alternatives) {
-            renderedAlts = engine.alternatives;
-            altBox.removeAllViews();
-            for (Track t : renderedAlts) {
-                Button b = button(t.artist + " – " + t.title + "\n" + t.reason);
-                b.setAllCaps(false);
-                b.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-                b.setOnClickListener(v -> engine.choose(t));
-                altBox.addView(b);
-            }
-        }
-
-        autoSwitch.setChecked(engine.isAuto());
-        logText.setText(String.join("\n", engine.log));
+        p.onShow();
+        p.render();
     }
 
-    private static String describe(Track t) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(t.hasBpm() ? String.format(Locale.ROOT, "%d BPM", Math.round(t.bpm)) : "BPM bilinmiyor");
-        if (t.hasGain()) sb.append(String.format(Locale.ROOT, " · ses %.1f dB", t.gain));
-        return sb.toString();
+    private LinearLayout buildNav() {
+        LinearLayout n = Ui.hbox(this);
+        n.setBackgroundColor(Ui.SURFACE);
+        n.setPadding(Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 10));
+        String[] labels = {"Keşfet", "Şimdi", "Ayarlar"};
+        int[] icons = {Views.Icon.DISCOVER, Views.Icon.NOW, Views.Icon.SETTINGS};
+        for (int i = 0; i < 3; i++) {
+            final int idx = i;
+            LinearLayout item = Ui.vbox(this);
+            item.setGravity(Gravity.CENTER_HORIZONTAL);
+            item.setClickable(true);
+            item.setOnClickListener(v -> showTab(idx));
+            LinearLayout pill = Ui.vbox(this);
+            pill.setGravity(Gravity.CENTER);
+            Views.Icon ic = new Views.Icon(this, icons[i], Ui.TEXT3);
+            pill.addView(ic, Ui.lp(Ui.dp(this, 24), Ui.dp(this, 24)));
+            item.addView(pill, Ui.lp(Ui.dp(this, 60), Ui.dp(this, 32)));
+            TextView l = Ui.text(this, labels[i], 12, Ui.TEXT3, Ui.MEDIUM);
+            l.setPadding(0, Ui.dp(this, 4), 0, 0);
+            item.addView(l);
+            n.addView(item, Ui.lpw(1));
+            navItems[i] = item;
+            navIcons[i] = ic;
+            navLabels[i] = l;
+        }
+        return n;
     }
 
-    private boolean hasNotificationAccess() {
+    // ================= İzinler ve dış ekranlar =================
+
+    public boolean hasNotificationAccess() {
         NotificationManager nm = getSystemService(NotificationManager.class);
         return nm != null && nm.isNotificationListenerAccessGranted(
                 new ComponentName(this, MusicListenerService.class));
     }
 
-    // ================= Küçük yardımcılar =================
-
-    private static String time(long ms) {
-        if (ms <= 0) return "0:00";
-        long s = ms / 1000;
-        return String.format(Locale.ROOT, "%d:%02d", s / 60, s % 60);
+    public boolean canOverlay() {
+        return Settings.canDrawOverlays(this);
     }
 
-    private int dp(int v) {
-        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics());
+    public boolean batteryUnrestricted() {
+        PowerManager pm = getSystemService(PowerManager.class);
+        return pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
     }
 
-    private TextView text(String s, int sp, boolean bold) {
-        TextView t = new TextView(this);
-        t.setText(s);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
-        if (bold) t.setTypeface(Typeface.DEFAULT_BOLD);
-        return t;
+    public void openNotificationAccess() {
+        safeStart(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
     }
 
-    private TextView label(String s) {
-        TextView t = text(s, 11, true);
-        t.setTextColor(ACCENT);
-        t.setLetterSpacing(0.08f);
-        t.setPadding(0, dp(16), 0, dp(6));
-        return t;
+    public void openOverlayPermission() {
+        safeStart(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())));
     }
 
-    private Button button(String s) {
-        Button b = new Button(this);
-        b.setText(s);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.topMargin = dp(6);
-        b.setLayoutParams(lp);
-        return b;
+    public void openBatterySettings() {
+        Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                Uri.parse("package:" + getPackageName()));
+        if (!safeStart(i)) safeStart(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
     }
 
-    private LinearLayout card() {
-        LinearLayout c = new LinearLayout(this);
-        c.setOrientation(LinearLayout.VERTICAL);
-        c.setPadding(dp(14), dp(4), dp(14), dp(14));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(dp(14));
-        bg.setColor(Color.argb(28, 128, 128, 128));
-        c.setBackground(bg);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.topMargin = dp(14);
-        c.setLayoutParams(lp);
-        return c;
+    public void openAppDetails() {
+        safeStart(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
+    }
+
+    public void openYtMusic() {
+        Intent i = getPackageManager().getLaunchIntentForPackage(Engine.YTM);
+        if (i == null) toast("YouTube Music bu telefonda bulunamadı");
+        else safeStart(i);
+    }
+
+    private boolean safeStart(Intent i) {
+        try {
+            startActivity(i);
+            return true;
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    public void toast(String msg) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+    }
+
+    public String versionName() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ex) {
+            return "";
+        }
     }
 }
