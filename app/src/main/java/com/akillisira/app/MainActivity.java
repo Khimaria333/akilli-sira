@@ -72,6 +72,7 @@ public class MainActivity extends Activity implements Engine.Listener {
             showSetup();
         } else if (currentTab < 0) {
             showTab(engine.nowTitle != null ? TAB_NOW : TAB_DISCOVER);
+            askNotificationsOnce();
         } else {
             current.onShow();
             current.render();
@@ -111,6 +112,15 @@ public class MainActivity extends Activity implements Engine.Listener {
         setupDone = true;
         getSharedPreferences("ayarlar", MODE_PRIVATE).edit().putBoolean("setupDone", true).apply();
         showTab(engine.nowTitle != null ? TAB_NOW : TAB_DISCOVER);
+        askNotificationsOnce();
+    }
+
+    /** Bildirim izni hiç sorulmadıysa bir kez sor. */
+    private void askNotificationsOnce() {
+        android.content.SharedPreferences sp = getSharedPreferences("ayarlar", MODE_PRIVATE);
+        if (sp.getBoolean("notifAsked", false) || !engine.isNotif() || notificationsAllowed()) return;
+        sp.edit().putBoolean("notifAsked", true).apply();
+        requestNotifications();
     }
 
     public void showTab(int tab) {

@@ -18,9 +18,9 @@ public final class Views {
     // =====================================================================
     public static final class Icon extends View {
         public static final int DISCOVER = 0, NOW = 1, SETTINGS = 2, CHECK = 3, NEXT = 4, BELL = 5,
-                LAYERS = 6, BATTERY = 7, REFRESH = 8, MUSIC = 9, MIC = 10, HISTORY = 11;
+                LAYERS = 6, BATTERY = 7, REFRESH = 8, MUSIC = 9, MIC = 10, HISTORY = 11, PLAY = 12, PAUSE = 13, PREV = 14;
 
-        private final int type;
+        private int type;
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Path path = new Path();
         private final RectF r = new RectF();
@@ -30,6 +30,13 @@ public final class Views {
             super(c);
             this.type = type;
             this.color = color;
+        }
+
+        public void setType(int t) {
+            if (t != type) {
+                type = t;
+                invalidate();
+            }
         }
 
         public void setColor(int color) {
@@ -170,6 +177,34 @@ public final class Views {
                     cv.drawLine(cx, cy, cx + 4 * u, cy + 2.5f * u, p);
                     break;
                 }
+                case PLAY: {
+                    p.setStyle(Paint.Style.FILL);
+                    path.moveTo(cx - 5 * u, cy - 8 * u);
+                    path.lineTo(cx + 8 * u, cy);
+                    path.lineTo(cx - 5 * u, cy + 8 * u);
+                    path.close();
+                    cv.drawPath(path, p);
+                    break;
+                }
+                case PAUSE: {
+                    p.setStyle(Paint.Style.FILL);
+                    r.set(cx - 7 * u, cy - 8 * u, cx - 2 * u, cy + 8 * u);
+                    cv.drawRoundRect(r, 1.5f * u, 1.5f * u, p);
+                    r.set(cx + 2 * u, cy - 8 * u, cx + 7 * u, cy + 8 * u);
+                    cv.drawRoundRect(r, 1.5f * u, 1.5f * u, p);
+                    break;
+                }
+                case PREV: {
+                    p.setStyle(Paint.Style.FILL);
+                    path.moveTo(cx + 7 * u, cy - 7 * u);
+                    path.lineTo(cx - 4 * u, cy);
+                    path.lineTo(cx + 7 * u, cy + 7 * u);
+                    path.close();
+                    cv.drawPath(path, p);
+                    r.set(cx - 7.5f * u, cy - 7 * u, cx - 4.5f * u, cy + 7 * u);
+                    cv.drawRoundRect(r, u, u, p);
+                    break;
+                }
                 case MIC: {
                     p.setStyle(Paint.Style.FILL);
                     r.set(cx - 3.5f * u, cy - 10 * u, cx + 3.5f * u, cy + 2 * u);
@@ -219,13 +254,19 @@ public final class Views {
 
         @Override
         protected void onDraw(Canvas cv) {
-            float w = getWidth(), h = getHeight(), rad = h / 2;
-            r.set(0, 0, w, h);
+            // Görünen çizgi 6dp; yükseklik dokunma alanı için daha büyük olabilir
+            float w = getWidth(), full = getHeight();
+            float h = Math.min(full, 6 * getResources().getDisplayMetrics().density);
+            float top = (full - h) / 2, rad = h / 2;
+            r.set(0, top, w, top + h);
             cv.drawRoundRect(r, rad, rad, track);
             if (value <= 0) return;
             fill.setShader(new LinearGradient(0, 0, w, 0, Ui.ACCENT, Ui.ACCENT2, Shader.TileMode.CLAMP));
-            r.set(0, 0, Math.max(h, w * value), h);
+            float end = Math.max(h, w * value);
+            r.set(0, top, end, top + h);
             cv.drawRoundRect(r, rad, rad, fill);
+            // tutamaç
+            cv.drawCircle(Math.min(w - h, Math.max(h, end)), top + h / 2, h * 1.1f, fill);
         }
     }
 

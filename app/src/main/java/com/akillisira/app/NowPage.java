@@ -21,6 +21,8 @@ public class NowPage extends Page {
     private TextView heroTitle, heroArtist, heroBpm, heroLang, timeLeft, timeRight;
     private TextView tempoValue, energyValue;
     private Views.ProgressLine progress;
+    private Views.Icon playIcon;
+    private LinearLayout notifBanner;
     private Views.Meter meter;
     private TextView sessionLabel, sleepChip, nightPill, carPill;
 
@@ -111,13 +113,47 @@ public class NowPage extends Page {
         nowCard.addView(hero, full());
 
         progress = new Views.ProgressLine(a);
-        nowCard.addView(progress, Ui.margins(Ui.lp(Ui.MATCH, Ui.dp(a, 6)), a, 0, 18, 0, 6));
+        nowCard.addView(progress, Ui.margins(Ui.lp(Ui.MATCH, Ui.dp(a, 24)), a, 0, 10, 0, 0));
         LinearLayout times = Ui.hbox(a);
         timeLeft = Ui.text(a, "0:00", 12, Ui.TEXT3, Ui.MEDIUM);
         timeRight = Ui.text(a, "0:00", 12, Ui.TEXT3, Ui.MEDIUM);
         times.addView(timeLeft, Ui.lpw(1));
         times.addView(timeRight);
         nowCard.addView(times, full());
+
+        // Dokunarak / sürükleyerek şarkıda ileri-geri
+        progress.setOnTouchListener((v, ev) -> {
+            if (e.nowDurationMs <= 0) return false;
+            float f = Math.max(0, Math.min(1, ev.getX() / v.getWidth()));
+            progress.setValue(f);
+            if (ev.getAction() == android.view.MotionEvent.ACTION_UP) {
+                e.seekTo((long) (f * e.nowDurationMs));
+            }
+            v.getParent().requestDisallowInterceptTouchEvent(true);
+            return true;
+        });
+
+        // Oynatma düğmeleri: önceki · durdur/başlat · akıllı geç
+        LinearLayout controls = Ui.hbox(a);
+        controls.setGravity(Gravity.CENTER);
+        LinearLayout prev = circleButton(Views.Icon.PREV, false, 52);
+        prev.setOnClickListener(v -> e.previous());
+        controls.addView(prev, Ui.lp(Ui.dp(a, 52), Ui.dp(a, 52)));
+        LinearLayout play = circleButton(Views.Icon.PAUSE, true, 68);
+        playIcon = (Views.Icon) play.getChildAt(0);
+        play.setOnClickListener(v -> e.togglePlay());
+        controls.addView(play, Ui.margins(Ui.lp(Ui.dp(a, 68), Ui.dp(a, 68)), a, 28, 0, 28, 0));
+        LinearLayout next = circleButton(Views.Icon.NEXT, false, 52);
+        next.setOnClickListener(v -> {
+            if (e.pick != null) {
+                e.skipNow();
+                a.toast("Sıradakine geçiliyor…");
+            } else {
+                a.toast("Sıradaki henüz hazır değil");
+            }
+        });
+        controls.addView(next, Ui.lp(Ui.dp(a, 52), Ui.dp(a, 52)));
+        nowCard.addView(controls, Ui.margins(full(), a, 0, 8, 0, 4));
 
         LinearLayout stats = Ui.hbox(a);
         LinearLayout tempo = statTile("TEMPO");
@@ -138,6 +174,22 @@ public class NowPage extends Page {
         stats.addView(energy, l2);
         nowCard.addView(stats, Ui.margins(full(), a, 0, 14, 0, 0));
         body.addView(nowCard, full());
+
+        // ---- Bildirim kapalı uyarısı ----
+        notifBanner = Ui.hbox(a);
+        notifBanner.setBackground(Ui.stroke(a, 0x1AFFB347, 0x55FFB347, 18, 1));
+        notifBanner.setPadding(Ui.dp(a, 14), Ui.dp(a, 12), Ui.dp(a, 10), Ui.dp(a, 12));
+        TextView nbT = Ui.text(a, "🔔  Bildirimler kapalı. Kilit ekranında sıradakini görmek ve oradan geçmek için aç.",
+                13, Ui.TEXT, Ui.MEDIUM);
+        nbT.setLineSpacing(0, 1.12f);
+        notifBanner.addView(nbT, Ui.lpw(1));
+        TextView nbB = Ui.text(a, "Aç", 13.5f, 0xFFFFFFFF, Ui.BOLD);
+        nbB.setGravity(Gravity.CENTER);
+        nbB.setPadding(Ui.dp(a, 16), Ui.dp(a, 8), Ui.dp(a, 16), Ui.dp(a, 8));
+        nbB.setBackground(Ui.ripple(a, Ui.gradient(a, Ui.ACCENT, Ui.ACCENT2, 16), 16));
+        nbB.setOnClickListener(v -> a.requestNotifications());
+        notifBanner.addView(nbB, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 10, 0, 0, 0));
+        body.addView(notifBanner, Ui.margins(full(), a, 0, 12, 0, 0));
 
         // ---- Bağlam: uyku, gece, araba ----
         contextRow = Ui.hbox(a);
@@ -266,6 +318,20 @@ public class NowPage extends Page {
         body.addView(nextSection, full());
     }
 
+    private LinearLayout circleButton(int icon, boolean primary, int sizeDp) {
+        LinearLayout b = Ui.vbox(a);
+        b.setGravity(Gravity.CENTER);
+        android.graphics.drawable.GradientDrawable bg = primary
+                ? Ui.gradient(a, Ui.ACCENT, Ui.ACCENT2, sizeDp / 2f)
+                : Ui.stroke(a, Ui.SURFACE2, Ui.STROKE, sizeDp / 2f, 1);
+        b.setBackground(Ui.ripple(a, bg, sizeDp / 2f));
+        b.setClickable(true);
+        if (primary) b.setElevation(Ui.dp(a, 4));
+        int is = primary ? 30 : 24;
+        b.addView(new Views.Icon(a, icon, primary ? 0xFFFFFFFF : Ui.TEXT), Ui.lp(Ui.dp(a, is), Ui.dp(a, is)));
+        return b;
+    }
+
     private TextView smallRound(String label) {
         TextView t = Ui.text(a, label, 15, Ui.TEXT, Ui.REGULAR);
         t.setGravity(Gravity.CENTER);
@@ -330,6 +396,7 @@ public class NowPage extends Page {
         nightPill.setVisibility(e.nightCalmActive() ? View.VISIBLE : View.GONE);
         carPill.setVisibility(e.isCarActive() ? View.VISIBLE : View.GONE);
         contextRow.setVisibility(has ? View.VISIBLE : View.GONE);
+        notifBanner.setVisibility(has && e.isNotif() && !a.notificationsAllowed() ? View.VISIBLE : View.GONE);
 
         if (!has) return;
 
@@ -355,6 +422,7 @@ public class NowPage extends Page {
         energyValue.setText(en < 0 ? "—" : en < 0.35 ? "Sakin" : en < 0.65 ? "Orta" : "Yüksek");
 
         progress.setValue(e.nowDurationMs > 0 ? (float) e.nowPositionMs / e.nowDurationMs : 0);
+        playIcon.setType(e.playing ? Views.Icon.PAUSE : Views.Icon.PLAY);
         timeLeft.setText(time(e.nowPositionMs) + (e.playing ? "" : "  ·  duraklatıldı"));
         timeRight.setText(time(e.nowDurationMs));
 

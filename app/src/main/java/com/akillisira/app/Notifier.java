@@ -18,7 +18,7 @@ import android.widget.RemoteViews;
 /** Bildirimdeki "Sıradaki" kartı ve ana ekran widget'ı. */
 public final class Notifier {
 
-    private static final String CHANNEL = "siradaki";
+    private static final String CHANNEL = "siradaki_v2";   // kilit ekranında görünen kanal
     private static final int NOTIF_ID = 7;
 
     private final Context app;
@@ -33,8 +33,8 @@ public final class Notifier {
 
     /** Motor her değiştiğinde çağrılır; içerik değişmediyse hiçbir şey yapmaz. */
     public void update(Engine e) {
-        try { updateNotification(e); } catch (Exception ignored) {}
-        try { updateWidgets(e); } catch (Exception ignored) {}
+        try { updateNotification(e); } catch (Exception ex) { report(e, "Bildirim", ex); }
+        try { updateWidgets(e); } catch (Exception ex) { report(e, "Widget", ex); }
     }
 
     // =====================================================================
@@ -60,13 +60,17 @@ public final class Notifier {
             return;
         }
         Track p = e.pick;
-        String sig = e.nowTitle + "|" + (p != null ? p.key() + "|" + (p.coverUrl != null) : "-") + "|"
+        String sig = e.nowTitle + "|" + e.playing + "|" + (p != null ? p.key() + "|" + (p.coverUrl != null) : "-") + "|"
                 + e.computing + "|" + e.isAuto() + "|" + e.sleepFinishing + "|" + (e.sleepRemainingMs() >= 0);
         if (sig.equals(lastNotifSig)) return;
         lastNotifSig = sig;
 
         if (!channelReady) {
-            NotificationChannel ch = new NotificationChannel(CHANNEL, "Sıradaki şarkı", NotificationManager.IMPORTANCE_LOW);
+            nm.deleteNotificationChannel("siradaki");   // eski, sessiz kanal
+            NotificationChannel ch = new NotificationChannel(CHANNEL, "Sıradaki şarkı", NotificationManager.IMPORTANCE_DEFAULT);
+            ch.setSound(null, null);          // ses ve titreşim yok, ama kilit ekranında görünür
+            ch.enableVibration(false);
+            ch.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
             ch.setDescription("Çalan ve sıradaki şarkı, hızlı geçiş düğmeleri");
             ch.setShowBadge(false);
             nm.createNotificationChannel(ch);
@@ -99,11 +103,12 @@ public final class Notifier {
                 .setContentIntent(openApp())
                 .setStyle(new Notification.BigTextStyle().bigText(text + "\nŞu an: " + e.nowTitle + " – " + e.nowArtist));
 
+        b.addAction(new Notification.Action.Builder(null, e.playing ? "⏸  Durdur" : "▶  Devam",
+                action(ActionReceiver.PLAY_PAUSE)).build());
         if (p != null && !e.sleepFinishing) {
-            b.addAction(new Notification.Action.Builder(null, "⏭  Şimdi geç", action(ActionReceiver.SKIP)).build());
+            b.addAction(new Notification.Action.Builder(null, "⏭  Geç", action(ActionReceiver.SKIP)).build());
             b.addAction(new Notification.Action.Builder(null, "👎  Başka öner", action(ActionReceiver.DISLIKE_NEXT)).build());
         }
-        b.addAction(new Notification.Action.Builder(null, "👎  Çalanı geç", action(ActionReceiver.DISLIKE_NOW)).build());
 
         if (p != null && p.coverUrl != null) {
             Bitmap bmp = ImageLoader.cached(p.coverUrl);
@@ -154,6 +159,16 @@ public final class Notifier {
         rv.setOnClickPendingIntent(R.id.w_dislike, action(ActionReceiver.DISLIKE_NEXT));
         rv.setOnClickPendingIntent(R.id.w_root, openApp());
         wm.updateAppWidget(ids, rv);
+    }
+
+    private String lastError;
+
+    private void report(Engine e, String what, Exception ex) {
+        String msg = what + " gösterilemedi: " + ex;
+        if (!msg.equals(lastError)) {
+            lastError = msg;
+            e.log(msg);
+        }
     }
 
     /** Bir sonraki güncellemede bildirimi yeniden kur. */

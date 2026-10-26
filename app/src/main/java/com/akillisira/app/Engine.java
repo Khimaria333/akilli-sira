@@ -540,6 +540,33 @@ public final class Engine {
         if (v == null) ed.remove(k); else ed.putString(k, v);
     }
 
+    /** Durdur / devam et (YT Music'te). */
+    public void togglePlay() {
+        if (controller == null) return;
+        try {
+            if (playing) controller.getTransportControls().pause();
+            else controller.getTransportControls().play();
+            playing = !playing;
+        } catch (Exception ignored) {}
+        notifyChanged();
+    }
+
+    /** YT Music'te önceki şarkı (ya da şarkının başı). */
+    public void previous() {
+        if (controller == null) return;
+        try { controller.getTransportControls().skipToPrevious(); } catch (Exception ignored) {}
+    }
+
+    public void seekTo(long ms) {
+        if (controller == null || nowDurationMs <= 0) return;
+        long t = Math.max(0, Math.min(nowDurationMs - 2000, ms));
+        try { controller.getTransportControls().seekTo(t); } catch (Exception ignored) {}
+        nowPositionMs = t;
+        lastRemainingMs = nowDurationMs - t;
+        if (fadingOut || savedVolume >= 0) restoreVolumeNow();
+        notifyChanged();
+    }
+
     public void skipNow() {
         if (pick != null) fire(pick, true);
     }
