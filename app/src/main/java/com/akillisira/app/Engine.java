@@ -133,9 +133,9 @@ public final class Engine {
     private Engine(Context app) {
         this.app = app;
         store = new Store(app);
-        lastfm.setKey(prefs.getString("lastfmKey", null));
         notifier = new Notifier(app);
         prefs = app.getSharedPreferences("ayarlar", Context.MODE_PRIVATE);
+        lastfm.setKey(prefs.getString("lastfmKey", null));
         pairs = app.getSharedPreferences("oneriler", Context.MODE_PRIVATE);
         audio = app.getSystemService(AudioManager.class);
     }
