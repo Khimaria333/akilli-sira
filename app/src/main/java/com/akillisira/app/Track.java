@@ -24,6 +24,7 @@ public class Track {
     public java.util.Map<String, Integer> tags;   // Last.fm sanatçı etiketleri (yoksa null)
     public java.util.Map<String, Integer> trackTags;   // Last.fm şarkı etiketleri (yoksa null)
     public volatile String videoId;    // YT Music'teki karşılığı
+    public volatile String spotifyUri; // spotify:track:… (Spotify bağlıysa)
 
     /** Kaynaklar: "same" aynı sanatçı, "related" benzer sanatçı, "radio" sanatçı radyosu,
      *  "mood" ruh hali / dil çalma listesi, "plan" Keşfet'te seçilen liste */

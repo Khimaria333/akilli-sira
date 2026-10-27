@@ -72,7 +72,7 @@ public class SetupPage extends Page {
         h.setPadding(0, Ui.dp(a, 20), 0, Ui.dp(a, 8));
         h.setLineSpacing(0, 1.05f);
         body.addView(h);
-        TextView sub = Ui.text(a, "YouTube Music'te çaldığın şarkının temposuna, enerjisine ve ruh haline göre "
+        TextView sub = Ui.text(a, "YouTube Music ya da Spotify'da çaldığın şarkının temposuna, enerjisine ve ruh haline göre "
                 + "sıradakini seçer, şarkı bitince yumuşak bir geçişle çalar. Başlamak için iki izin gerekiyor.",
                 14.5f, Ui.TEXT2, Ui.REGULAR);
         sub.setLineSpacing(0, 1.2f);
@@ -95,7 +95,7 @@ public class SetupPage extends Page {
         body.addView(Ui.space(a, 12));
 
         overlay = new Step(2, Views.Icon.LAYERS, "Diğer uygulamaların üzerinde göster",
-                "Şarkı bitince, uygulama arka plandayken bile sıradaki şarkıyı YT Music'te açabilmek için.",
+                "Şarkı bitince, uygulama arka plandayken bile sıradaki şarkıyı müzik uygulamasında açabilmek için.",
                 "İzin ver", a::openOverlayPermission);
         body.addView(overlay.card, full());
         body.addView(Ui.space(a, 12));

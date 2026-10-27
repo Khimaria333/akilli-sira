@@ -138,6 +138,7 @@ final class Widgets {
         final String title, artist, nextLine, meta, mood, status, remain;
         final int progress;
         final Track pick;
+        final String player;
         final List<Track> upcoming = new ArrayList<>();
 
         State(Engine e) {
@@ -146,8 +147,9 @@ final class Widgets {
             auto = e.isAuto();
             liked = has && e.isNowLiked();
             pick = e.pick;
+            player = e.playerPackage();
             title = has ? e.nowTitle : "Bir şarkı aç";
-            artist = has ? (e.nowArtist != null ? e.nowArtist : "") : "YouTube Music'te çal, sıradakini Ahenk seçsin";
+            artist = has ? (e.nowArtist != null ? e.nowArtist : "") : e.playerIn() + " çal, sıradakini Ahenk seçsin";
 
             if (pick != null) nextLine = "Sıradaki · " + pick.title + " — " + pick.artist;
             else if (!has) nextLine = "Aşağıdan bir ruh hali seç, liste hazırlansın";
@@ -217,7 +219,7 @@ final class Widgets {
         rv.setTextViewText(R.id.w_next_line, s.nextLine);
         rv.setImageViewResource(R.id.w_play, s.playing ? R.drawable.ic_w_pause : R.drawable.ic_w_play);
         rv.setOnClickPendingIntent(R.id.w_root, openApp());
-        rv.setOnClickPendingIntent(R.id.w_play, s.has ? action(ActionReceiver.PLAY_PAUSE) : openYtMusic());
+        rv.setOnClickPendingIntent(R.id.w_play, s.has ? action(ActionReceiver.PLAY_PAUSE) : openPlayer(s.player));
         rv.setOnClickPendingIntent(R.id.w_next, action(ActionReceiver.SKIP));
         rv.setViewVisibility(R.id.w_next, s.pick != null ? View.VISIBLE : View.INVISIBLE);
         if (size == SMALL) return rv;
@@ -328,8 +330,8 @@ final class Widgets {
         return PendingIntent.getActivity(app, 2, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
-    private PendingIntent openYtMusic() {
-        Intent i = app.getPackageManager().getLaunchIntentForPackage("com.google.android.apps.youtube.music");
+    private PendingIntent openPlayer(String pkg) {
+        Intent i = app.getPackageManager().getLaunchIntentForPackage(pkg);
         if (i == null) return openApp();
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         return PendingIntent.getActivity(app, 3, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);

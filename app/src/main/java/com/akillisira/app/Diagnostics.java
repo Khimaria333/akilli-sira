@@ -25,6 +25,10 @@ public final class Diagnostics {
         final boolean notifs = a.notificationsAllowed();
         final boolean battery = a.batteryUnrestricted();
         final boolean ytInstalled = a.getPackageManager().getLaunchIntentForPackage(Engine.YTM) != null;
+        final boolean spInstalled = a.getPackageManager().getLaunchIntentForPackage(Engine.SPOTIFY) != null;
+        final boolean spotifyMode = e.isSpotify();
+        final boolean spConnected = e.spotify.connected();
+        final boolean spBlocked = e.spotify.playerBlocked();
         final boolean ytConnected = e.controller != null;
         final boolean wakeOn = WakeScheduler.isOn(a);
         final boolean exact = WakeScheduler.exactAllowed(a);
@@ -54,12 +58,28 @@ public final class Diagnostics {
                 out.add(new Item(false, true, "Last.fm (tarz etiketleri)",
                         "Bağlı değil. Bağlarsan öneriler çok daha isabetli olur."));
             }
-            // YT Music araması
-            String vid = YtMusic.findVideoId("Tarkan", "Şımarık");
-            out.add(new Item(vid != null, false, "YouTube Music araması",
-                    vid != null ? "Çalışıyor" : "Şarkı bağlantısı bulunamadı; geçişler arama ile denenir."));
-            out.add(new Item(ytInstalled, false, "YouTube Music uygulaması",
-                    !ytInstalled ? "Telefonda bulunamadı" : ytConnected ? "Yüklü ve bağlı" : "Yüklü; bir şarkı açınca bağlanır"));
+            if (!spotifyMode || ytInstalled) {
+                // YT Music araması
+                String vid = YtMusic.findVideoId("Tarkan", "Şımarık");
+                out.add(new Item(vid != null, !spotifyMode, "YouTube Music araması",
+                        vid != null ? "Çalışıyor" : "Şarkı bağlantısı bulunamadı; geçişler arama ile denenir."));
+                out.add(new Item(ytInstalled, spotifyMode, "YouTube Music uygulaması",
+                        !ytInstalled ? "Telefonda bulunamadı" : ytConnected && !spotifyMode ? "Yüklü ve bağlı" : "Yüklü; bir şarkı açınca bağlanır"));
+            }
+            if (spotifyMode || spInstalled) {
+                out.add(new Item(spInstalled, !spotifyMode, "Spotify uygulaması",
+                        !spInstalled ? "Telefonda bulunamadı" : ytConnected && spotifyMode ? "Yüklü ve bağlı" : "Yüklü; bir şarkı açınca bağlanır"));
+                if (spConnected) {
+                    String uri = e.spotify.findTrack("Tarkan", "Şımarık");
+                    out.add(new Item(uri != null && !spBlocked, spBlocked, "Spotify hesabı",
+                            uri == null ? "Bağlı ama arama çalışmadı; Ayarlar'dan yeniden bağlan"
+                                    : spBlocked ? "Bağlı, ama Premium olmadığı için sıraya ekleme kapalı; geçişler uygulama üzerinden"
+                                    : "Bağlı ✓ sıradaki şarkı Spotify sırasına eklenir"));
+                } else {
+                    out.add(new Item(false, true, "Spotify hesabı",
+                            "Bağlı değil. Bağlarsan geçişler Spotify'ın kendi sırasıyla, daha yumuşak olur."));
+                }
+            }
             // İzinler
             out.add(new Item(notifAccess, false, "Bildirim erişimi", notifAccess ? "Açık" : "Kapalı: çalan şarkı okunamaz"));
             out.add(new Item(overlay, false, "Üstte gösterme", overlay ? "Açık" : "Kapalı: arka planda geçiş yapılamaz"));

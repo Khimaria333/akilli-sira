@@ -389,7 +389,7 @@ public class DiscoverPage extends Page {
         });
         sb.addView(clr);
         p.addView(sb, full());
-        TextView hint = Ui.text(a, "Bir şarkıya dokun: YouTube Music'te başlar, Ahenk oradan devam eder.",
+        TextView hint = Ui.text(a, "Bir şarkıya dokun: " + e.playerIn() + " başlar, Ahenk oradan devam eder.",
                 12, Ui.TEXT3, Ui.REGULAR);
         hint.setPadding(Ui.dp(a, 4), Ui.dp(a, 8), 0, 0);
         p.addView(hint);
@@ -661,17 +661,31 @@ public class DiscoverPage extends Page {
         share.setOnClickListener(v -> ShareCard.shareList(a, e.discoverLabel, list));
         btns.addView(share, Ui.margins(Ui.lp(Ui.dp(a, 52), Ui.dp(a, 52)), a, 10, 0, 0, 0));
         results.addView(btns, Ui.margins(full(), a, 0, 0, 0, 10));
-        TextView exp = Ui.secondaryButton(a, "▶  YouTube Music'te liste olarak aç");
+        final String expLabel = "▶  " + e.playerName() + (e.isSpotify() ? "'da" : "'te") + " liste olarak aç";
+        LinearLayout expRow = Ui.hbox(a);
+        TextView exp = Ui.secondaryButton(a, expLabel);
         exp.setGravity(Gravity.CENTER);
         exp.setOnClickListener(v -> {
             if (e.exporting) return;
-            exp.setText("YouTube Music'e aktarılıyor…");
-            e.exportToYtMusic(list, msg -> {
-                exp.setText("▶  YouTube Music'te liste olarak aç");
+            exp.setText(e.playerName() + " hazırlanıyor…");
+            e.exportList(list, msg -> {
+                exp.setText(expLabel);
                 a.toast(msg);
             });
         });
-        results.addView(exp, Ui.margins(full(), a, 0, 0, 0, 12));
+        expRow.addView(exp, Ui.lpw(1));
+        if (e.isSpotify() && e.spotify.connected()) {
+            TextView save = Ui.secondaryButton(a, "💾");
+            save.setOnClickListener(v -> {
+                if (e.exporting) return;
+                String name = "Ahenk · " + e.discoverLabel.replace("  ·  ", " · ");
+                if (name.length() > 90) name = name.substring(0, 90);
+                a.toast("Spotify'a kaydediliyor…");
+                e.saveToSpotify(list, name, a::toast);
+            });
+            expRow.addView(save, Ui.margins(Ui.lp(Ui.dp(a, 56), Ui.WRAP), a, 10, 0, 0, 0));
+        }
+        results.addView(expRow, Ui.margins(full(), a, 0, 0, 0, 12));
 
         int i = 1;
         for (Track t : list) {
@@ -715,7 +729,7 @@ public class DiscoverPage extends Page {
                 }
                 hideKeyboard(searchBox);
                 e.startFrom(t);
-                a.toast("YouTube Music'te açılıyor: " + t.title);
+                a.toast(e.playerIn() + " açılıyor: " + t.title);
                 a.showTab(MainActivity.TAB_NOW);
             });
             searchList.addView(r, Ui.margins(full(), a, 0, n == 0 ? 12 : 0, 0, 8));
@@ -729,7 +743,7 @@ public class DiscoverPage extends Page {
             return;
         }
         e.playNow(t, list, e.discoverDj);
-        a.toast("YouTube Music'te açılıyor: " + t.title);
+        a.toast(e.playerIn() + " açılıyor: " + t.title);
         a.showTab(MainActivity.TAB_NOW);
     }
 

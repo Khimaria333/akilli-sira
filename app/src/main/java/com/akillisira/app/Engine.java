@@ -43,10 +43,13 @@ public final class Engine {
     public interface Listener { void onEngineChanged(); }
 
     public static final String YTM = "com.google.android.apps.youtube.music";
+    public static final String SPOTIFY = SpotifyApi.PACKAGE;
+    public static final String PLAYER_AUTO = "auto", PLAYER_YTM = "ytm", PLAYER_SPOTIFY = "spotify";
 
     // Geçiş yöntemleri
     public static final int SILENT_UNKNOWN = -1, SILENT_NO = 0, SILENT_YES = 1;
-    private static final int M_NONE = 0, M_SILENT = 1, M_INTENT = 2, M_SEARCH = 3;
+    private static final int M_NONE = 0, M_SILENT = 1, M_INTENT = 2, M_SEARCH = 3,
+            M_SP_API = 4, M_SP_QUEUE = 5, M_SP_URI = 6;
 
     private static final long NEAR_END_MS = 6000;
 
@@ -94,6 +97,27 @@ public final class Engine {
 
     // Kalıcı veriler, bildirim/widget
     public final Store store;
+    public SpotifyApi spotify;
+    /** Şu an bağlı olunan (ya da en son bağlanılan) müzik uygulaması. */
+    public volatile String activePlayer;
+
+    public String getPlayerPref() { return prefs.getString("player", PLAYER_AUTO); }
+
+    public void setPlayerPref(String p) {
+        prefs.edit().putString("player", p).apply();
+        if (PLAYER_YTM.equals(p)) activePlayer = YTM;
+        if (PLAYER_SPOTIFY.equals(p)) activePlayer = SPOTIFY;
+        MusicListenerService.reattachNow();
+        notifyChanged();
+    }
+
+    public boolean isSpotify() { return SPOTIFY.equals(activePlayer); }
+    public String playerName() { return isSpotify() ? "Spotify" : "YouTube Music"; }
+    public String playerPackage() { return isSpotify() ? SPOTIFY : YTM; }
+    /** "YouTube Music'te" / "Spotify'da" */
+    public String playerIn() { return isSpotify() ? "Spotify'da" : "YouTube Music'te"; }
+    /** "YouTube Music'i" / "Spotify'ı" */
+    public String playerAcc() { return isSpotify() ? "Spotify'ı" : "YouTube Music'i"; }
     final Notifier notifier;
     private String lastLoggedKey;
     private boolean carActive;
@@ -144,6 +168,8 @@ public final class Engine {
         notifier = new Notifier(app);
         prefs = app.getSharedPreferences("ayarlar", Context.MODE_PRIVATE);
         lastfm.setKey(prefs.getString("lastfmKey", null));
+        spotify = new SpotifyApi(app);
+        activePlayer = prefs.getString("lastPlayer", YTM);
         loadProfile();
         pairs = app.getSharedPreferences("oneriler", Context.MODE_PRIVATE);
         audio = app.getSystemService(AudioManager.class);
@@ -442,7 +468,12 @@ public final class Engine {
     public void setController(MediaController c) {
         controller = c;
         if (c == null) playing = false;
-        log(c != null ? "YT Music'e bağlandı" : "YT Music bağlantısı kapandı");
+        if (c != null) {
+            String pk = c.getPackageName();
+            activePlayer = pk;
+            prefs.edit().putString("lastPlayer", pk).apply();
+        }
+        log(c != null ? playerName() + "'e bağlandı" : playerName() + " bağlantısı kapandı");
         notifyChanged();
     }
 
@@ -483,6 +514,13 @@ public final class Engine {
                 firedForCurrent = true;
                 expectSwitchUntil = now + 15000;
                 launchIntent(transTarget);
+                return;
+            }
+            if (!match && transMethod == M_SP_URI && !fallbackDone) {
+                fallbackDone = true;
+                firedForCurrent = true;
+                expectSwitchUntil = now + 15000;
+                spotifySearchPlay(transTarget);
                 return;
             }
             if (match && transMethod == M_SILENT && getSilentState() != SILENT_YES) {
@@ -534,6 +572,12 @@ public final class Engine {
         }
 
         boolean stopHere = sleepFinishing;
+        // Spotify + Premium: sıradakini şarkı bitmeden Spotify'ın kendi sırasına ekle (en temiz geçiş)
+        if (isSpotify() && spotify.connected() && !spotify.playerBlocked() && isPlaying && !firedForCurrent && !stopHere
+                && isAuto() && pick != null && !externalHolds() && nowDurationMs > 30000 && lastRemainingMs <= 15000
+                && !spQueueing && !String.valueOf(nowKey).equals(spQueueFailedFor)) {
+            queueOnSpotify(pick);
+        }
         if (isPlaying && !firedForCurrent && nowDurationMs > 30000 && (stopHere || (isAuto() && pick != null && !externalHolds()))) {
             long fadeMs = isFade() || stopHere ? Math.max(getFadeSec(), stopHere ? 6 : 0) * 1000L : 0;
             if (fadeMs > 0 && !fadingOut && savedVolume < 0 && lastRemainingMs <= fadeMs + 250) {
@@ -544,6 +588,13 @@ public final class Engine {
                 if (stopHere) stopForSleep();
                 else fire(pick, false);
             }
+        }
+
+        // Spotify'a adresle çal komutu yanıtsız kaldıysa aramayla dene
+        if (transMethod == M_SP_URI && !fallbackDone && verifyDeadline > 0 && now > verifyDeadline) {
+            fallbackDone = true;
+            verifyDeadline = 0;
+            spotifySearchPlay(transTarget);
         }
 
         // Sessiz yöntem cevap vermediyse bağlantıyla geç
@@ -817,6 +868,10 @@ public final class Engine {
         transTarget = t;
         fallbackDone = false;
         verifyDeadline = 0;
+        if (isSpotify()) {
+            spotifyFire(t, userInitiated);
+            return;
+        }
         if (t.videoId != null) {
             doSwitch(t, userInitiated);
         } else {
@@ -825,6 +880,111 @@ public final class Engine {
                 main.post(() -> doSwitch(t, userInitiated));
             });
         }
+    }
+
+    // ---- Spotify ----
+
+    private boolean spQueueing;
+    private String spQueueFailedFor;
+
+    /** Sıradakini Spotify'ın kendi sırasına ekler; Spotify geçişi kendisi yapar (kendi yumuşak geçişiyle). */
+    private void queueOnSpotify(Track t) {
+        spQueueing = true;
+        firedForCurrent = true;
+        final long remain = lastRemainingMs;
+        final String forKey = nowKey;
+        net.submit(() -> {
+            String uri = t.spotifyUri != null ? t.spotifyUri : spotify.findTrack(t.artist, t.title);
+            t.spotifyUri = uri;
+            int r = uri == null ? 3 : spotify.addToQueue(uri);
+            main.post(() -> {
+                spQueueing = false;
+                if (!String.valueOf(forKey).equals(nowKey)) return;   // bu arada şarkı değişti
+                if (r == 0) {
+                    transTarget = t;
+                    transMethod = M_SP_QUEUE;
+                    fallbackDone = true;
+                    verifyDeadline = 0;
+                    expectSwitchUntil = SystemClock.elapsedRealtime() + remain + 20000;
+                    log("⏭ Spotify sırasına eklendi: " + t);
+                } else {
+                    firedForCurrent = false;          // şarkı sonunda uygulama üzerinden geç
+                    spQueueFailedFor = forKey;
+                    if (r == 1) log("Spotify sıraya ekleme için Premium istiyor; şarkı sonunda geçilecek");
+                    else if (r == 2) log("Spotify'da açık cihaz bulunamadı; şarkı sonunda geçilecek");
+                    else if (uri == null) log("Spotify'da bulunamadı, aramayla denenecek: " + t);
+                }
+                notifyChanged();
+            });
+        });
+    }
+
+    /** Hemen geçiş: önce Spotify API (Premium), olmazsa uygulamaya adresle, o da olmazsa aramayla. */
+    private void spotifyFire(Track t, boolean userInitiated) {
+        net.submit(() -> {
+            String uri = t.spotifyUri;
+            if (uri == null && spotify.connected()) {
+                uri = spotify.findTrack(t.artist, t.title);
+                t.spotifyUri = uri;
+            }
+            int r = -1;
+            if (uri != null && spotify.connected() && !spotify.playerBlocked()) {
+                r = spotify.play(java.util.Collections.singletonList(uri));
+            }
+            final String u = uri;
+            final int res = r;
+            main.post(() -> {
+                if (res == 0) {
+                    transMethod = M_SP_API;
+                    log("→ " + t + " (Spotify)");
+                    notifyChanged();
+                    return;
+                }
+                if (res == 1) log("Spotify çalma için Premium istiyor; uygulama üzerinden geçiliyor");
+                spotifyLocalPlay(t, u);
+            });
+        });
+    }
+
+    private void spotifyLocalPlay(Track t, String uri) {
+        if (controller == null) {
+            log("Spotify bağlı değil, geçilemedi");
+            expectSwitchUntil = 0;
+            restoreVolumeNow();
+            notifyChanged();
+            return;
+        }
+        if (uri != null) {
+            try {
+                controller.getTransportControls().playFromUri(Uri.parse(uri), new Bundle());
+                transMethod = M_SP_URI;
+                verifyDeadline = SystemClock.elapsedRealtime() + 4000;
+                log("→ " + t);
+                notifyChanged();
+                return;
+            } catch (Exception ignored) {}
+        }
+        spotifySearchPlay(t);
+    }
+
+    private void spotifySearchPlay(Track t) {
+        if (t == null || controller == null) return;
+        String q = Text.mainArtist(t.artist) + " " + Text.cleanTitle(t.title);
+        Bundle ex = new Bundle();
+        ex.putString(MediaStore.EXTRA_MEDIA_FOCUS, MediaStore.Audio.Media.ENTRY_CONTENT_TYPE);
+        ex.putString(MediaStore.EXTRA_MEDIA_TITLE, t.title);
+        ex.putString(MediaStore.EXTRA_MEDIA_ARTIST, t.artist);
+        ex.putString(SearchManager.QUERY, q);
+        try {
+            controller.getTransportControls().playFromSearch(q, ex);
+            transMethod = M_SEARCH;
+            log("→ " + t + " (Spotify araması)");
+        } catch (Exception e) {
+            log("Spotify'da geçilemedi: " + e.getMessage());
+            expectSwitchUntil = 0;
+            restoreVolumeNow();
+        }
+        notifyChanged();
     }
 
     private void doSwitch(Track t, boolean userInitiated) {
@@ -1270,7 +1430,16 @@ public final class Engine {
     }
 
     private void prefetchVideoId(Track t) {
-        if (t == null || t.videoId != null) return;
+        if (t == null) return;
+        if (isSpotify()) {
+            if (t.spotifyUri != null || !spotify.connected()) return;
+            net.submit(() -> {
+                t.spotifyUri = spotify.findTrack(t.artist, t.title);
+                main.post(this::notifyChanged);
+            });
+            return;
+        }
+        if (t.videoId != null) return;
         net.submit(() -> {
             String id = YtMusic.findVideoId(t.artist, t.title);
             t.videoId = id;
@@ -2263,6 +2432,80 @@ public final class Engine {
                 if (!ids.isEmpty()) lastExportLink = YtMusic.shareLink(ids);
                 if (!found.isEmpty()) playNow(found.get(0), found);
                 if (done != null) done.accept("YouTube liste oluşturmadı; şarkılar Ahenk sırasıyla çalınıyor.");
+                notifyChanged();
+            });
+        });
+    }
+
+    /** Listeyi çalan uygulamada liste olarak açar (YouTube Music ya da Spotify). */
+    public void exportList(List<Track> list, java.util.function.Consumer<String> done) {
+        if (isSpotify()) exportToSpotify(list, done);
+        else exportToYtMusic(list, done);
+    }
+
+    private List<Track> resolveSpotify(List<Track> l, List<String> uris) {
+        List<Track> found = new ArrayList<>();
+        for (Track t : l) {
+            if (t.spotifyUri == null) t.spotifyUri = spotify.findTrack(t.artist, t.title);
+            if (t.spotifyUri != null) { uris.add(t.spotifyUri); found.add(t); }
+        }
+        return found;
+    }
+
+    private void exportToSpotify(List<Track> list, java.util.function.Consumer<String> done) {
+        if (list == null || list.isEmpty() || exporting) return;
+        if (!spotify.connected()) {
+            playNow(list.get(0), list);
+            if (done != null) done.accept("Liste Ahenk sırasıyla çalınıyor. Spotify'da liste olarak açmak için "
+                    + "Ayarlar → Müzik uygulaması'ndan hesabını bağla.");
+            return;
+        }
+        exporting = true;
+        notifyChanged();
+        final List<Track> l = new ArrayList<>(list.subList(0, Math.min(30, list.size())));
+        net.submit(() -> {
+            List<String> uris = new ArrayList<>();
+            List<Track> found = resolveSpotify(l, uris);
+            int r = uris.isEmpty() ? 3 : spotify.playerBlocked() ? 1 : spotify.play(uris);
+            main.post(() -> {
+                exporting = false;
+                if (r == 0) {
+                    externalTitles.clear();
+                    for (Track t : found) externalTitles.add(t.title);
+                    externalStarted = SystemClock.elapsedRealtime();
+                    log("▶ " + found.size() + " şarkı Spotify'da liste olarak çalıyor");
+                    if (done != null) done.accept("Spotify'da " + found.size() + " şarkılık liste çalıyor.");
+                } else {
+                    if (!found.isEmpty()) playNow(found.get(0), found);
+                    else if (!l.isEmpty()) playNow(l.get(0), l);
+                    if (done != null) done.accept(r == 1 ? "Spotify liste çalmak için Premium istiyor; şarkılar Ahenk sırasıyla çalınıyor."
+                            : r == 2 ? "Spotify açık değil gibi; önce Spotify'da bir şarkı aç. Şimdilik Ahenk sırasıyla çalınıyor."
+                            : "Spotify listeyi başlatmadı; şarkılar Ahenk sırasıyla çalınıyor.");
+                }
+                notifyChanged();
+            });
+        });
+    }
+
+    /** Listeyi Spotify hesabına çalma listesi olarak kaydeder. */
+    public void saveToSpotify(List<Track> list, String name, java.util.function.Consumer<String> done) {
+        if (list == null || list.isEmpty() || exporting) return;
+        if (!spotify.connected()) {
+            if (done != null) done.accept("Önce Ayarlar → Müzik uygulaması'ndan Spotify hesabını bağla.");
+            return;
+        }
+        exporting = true;
+        notifyChanged();
+        final List<Track> l = new ArrayList<>(list);
+        net.submit(() -> {
+            List<String> uris = new ArrayList<>();
+            resolveSpotify(l, uris);
+            String link = uris.isEmpty() ? null : spotify.savePlaylist(name, uris);
+            main.post(() -> {
+                exporting = false;
+                if (done != null) done.accept(link != null ? "💾 Spotify'a kaydedildi: " + name + " (" + uris.size() + " şarkı)"
+                        : "Spotify'a kaydedilemedi. Bağlantını Ayarlar'dan yenilemeyi dene.");
+                if (link != null) log("💾 Spotify listesi oluşturuldu: " + name);
                 notifyChanged();
             });
         });

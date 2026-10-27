@@ -10,7 +10,7 @@ public class IntroPage extends Page {
 
     private static final String[][] SLIDES = {
         {"🎧", "Sıradakini ben seçerim",
-            "YouTube Music'te bir şarkı aç. Tarzına, temposuna ve ruh haline en uygun şarkıyı bulur, "
+            "YouTube Music ya da Spotify'da bir şarkı aç. Tarzına, temposuna ve ruh haline en uygun şarkıyı bulur, "
                 + "şarkı bitince sesi yumuşakça kısıp sıradakine geçerim."},
         {"🎯", "Önce tarz gelir",
             "Benzer sanatçılar, aynı tür, aynı dönem; tempo ve enerji ince ayar. Rapten fasıla saçma geçişler yok. "

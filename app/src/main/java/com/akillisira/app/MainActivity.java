@@ -427,8 +427,9 @@ public class MainActivity extends Activity implements Engine.Listener {
     }
 
     public void openYtMusic() {
-        Intent i = getPackageManager().getLaunchIntentForPackage(Engine.YTM);
-        if (i == null) toast("YouTube Music bu telefonda bulunamadı");
+        Intent i = getPackageManager().getLaunchIntentForPackage(engine.playerPackage());
+        if (i == null) i = getPackageManager().getLaunchIntentForPackage(engine.isSpotify() ? Engine.YTM : Engine.SPOTIFY);
+        if (i == null) toast("YouTube Music ya da Spotify bu telefonda bulunamadı");
         else safeStart(i);
     }
 

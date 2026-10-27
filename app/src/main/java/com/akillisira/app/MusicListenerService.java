@@ -113,6 +113,7 @@ public class MusicListenerService extends NotificationListenerService {
     public void onListenerConnected() {
         super.onListenerConnected();
         engine = Engine.get(this);
+        current = this;
         engine.setServiceConnected(true);
         sessions = getSystemService(MediaSessionManager.class);
         ComponentName me = new ComponentName(this, MusicListenerService.class);
@@ -129,6 +130,7 @@ public class MusicListenerService extends NotificationListenerService {
 
     @Override
     public void onListenerDisconnected() {
+        if (current == this) current = null;
         if (sessions != null) {
             try { sessions.removeOnActiveSessionsChangedListener(sessionsListener); } catch (Exception ignored) {}
         }
@@ -140,13 +142,45 @@ public class MusicListenerService extends NotificationListenerService {
         super.onListenerDisconnected();
     }
 
+    /** Ayarlardan müzik uygulaması değişince yeniden bağlan. */
+    static volatile MusicListenerService current;
+
+    static void reattachNow() {
+        MusicListenerService s = current;
+        if (s == null || s.sessions == null) return;
+        s.handler.post(() -> {
+            try {
+                s.attach(s.sessions.getActiveSessions(new ComponentName(s, MusicListenerService.class)));
+            } catch (Exception ignored) {}
+        });
+    }
+
+    private static boolean isPlaying(MediaController c) {
+        PlaybackState st = c.getPlaybackState();
+        return st != null && st.getState() == PlaybackState.STATE_PLAYING;
+    }
+
+    private static boolean accepts(String pref, String pk) {
+        if (Engine.PLAYER_YTM.equals(pref)) return Engine.YTM.equals(pk);
+        if (Engine.PLAYER_SPOTIFY.equals(pref)) return Engine.SPOTIFY.equals(pk);
+        return Engine.YTM.equals(pk) || Engine.SPOTIFY.equals(pk);
+    }
+
     private void attach(List<MediaController> list) {
         if (list == null) return;
-        MediaController ytm = null;
+        // Desteklenen uygulamalar: ayara göre sadece biri ya da (otomatik) hangisi çalıyorsa
+        String pref = engine != null ? engine.getPlayerPref() : Engine.PLAYER_AUTO;
+        MediaController ytm = null, playingOne = null, firstOne = null;
         for (MediaController c : list) {
-            if (Engine.YTM.equals(c.getPackageName())) { ytm = c; break; }
+            if (!accepts(pref, c.getPackageName())) continue;
+            if (firstOne == null) firstOne = c;
+            if (playingOne == null && isPlaying(c)) playingOne = c;
         }
-        if (ytm == null) return; // YT Music kapalı; açılınca tekrar haber gelir
+        ytm = playingOne != null ? playingOne : firstOne;
+        // Otomatik modda çalmayan bir uygulamaya, çalan bağlıyken geçme
+        if (playingOne == null && controller != null && isPlaying(controller)
+                && accepts(pref, controller.getPackageName())) return;
+        if (ytm == null) return; // desteklenen uygulama kapalı; açılınca tekrar haber gelir
         if (controller != null && controller.getSessionToken().equals(ytm.getSessionToken())) return;
 
         detach();

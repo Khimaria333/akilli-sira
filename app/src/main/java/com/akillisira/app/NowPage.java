@@ -70,7 +70,7 @@ public class NowPage extends Page {
         TextView et = Ui.text(a, "Henüz bir şarkı çalmıyor", 18, Ui.TEXT, Ui.BOLD);
         et.setPadding(0, Ui.dp(a, 18), 0, Ui.dp(a, 6));
         empty.addView(et);
-        TextView ed = Ui.text(a, "YouTube Music'te bir şarkı aç ya da ruh haline göre bir liste başlat. "
+        TextView ed = Ui.text(a, "YouTube Music ya da Spotify'da bir şarkı aç ya da ruh haline göre bir liste başlat. "
                 + "Sıradakini ben seçeceğim.", 14, Ui.TEXT2, Ui.REGULAR);
         ed.setGravity(Gravity.CENTER);
         ed.setLineSpacing(0, 1.2f);
@@ -78,7 +78,7 @@ public class NowPage extends Page {
         TextView goDiscover = Ui.primaryButton(a, "✨  Ruh halime göre başlat");
         goDiscover.setOnClickListener(v -> a.showTab(MainActivity.TAB_DISCOVER));
         empty.addView(goDiscover, Ui.margins(full(), a, 0, 22, 0, 10));
-        TextView openYtm = Ui.secondaryButton(a, "YouTube Music'i aç");
+        TextView openYtm = Ui.secondaryButton(a, e.playerAcc() + " aç");
         openYtm.setOnClickListener(v -> a.openYtMusic());
         empty.addView(openYtm, full());
         body.addView(empty, full());
@@ -556,7 +556,7 @@ public class NowPage extends Page {
             else if (ms <= 60000) cd = "⏱  " + Math.max(1, (ms + 999) / 1000) + " sn sonra geçiş"
                     + (e.isFade() ? " · ses yumuşakça kısılacak" : "");
             else cd = "Şarkı bitince geçecek · " + time(ms) + " kaldı";
-            if (p.videoId == null) cd += "\nYouTube Music'te aranıyor…";
+            if (!e.isSpotify() && p.videoId == null) cd += "\nYouTube Music'te aranıyor…";
             nextCountdown.setText(cd);
         }
 

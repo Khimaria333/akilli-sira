@@ -26,7 +26,8 @@ public class SettingsPage extends Page {
     private Ui.Segmented fadeSeg, langSeg, modeSeg;
     private TextView methodText, retrySilent;
     private TextView permNotif, permOverlay, permBattery;
-    private TextView logText, weatherRow;
+    private TextView logText, weatherRow, spStatus, spRemove;
+    private android.widget.EditText spInput;
 
     private void refreshWeatherRow() {
         if (weatherRow == null) return;
@@ -61,6 +62,107 @@ public class SettingsPage extends Page {
         updBtn.setOnClickListener(v -> Updater.showDialog(a));
         updCard.addView(updBtn, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 10, 0, 0, 0));
         body.addView(updCard, Ui.margins(full(), a, 0, 14, 0, 0));
+
+        // ---- Müzik uygulaması ----
+        body.addView(Ui.section(a, "Müzik uygulaması"));
+        LinearLayout mp = Ui.card(a);
+        String pref = e.getPlayerPref();
+        int pi = Engine.PLAYER_YTM.equals(pref) ? 1 : Engine.PLAYER_SPOTIFY.equals(pref) ? 2 : 0;
+        Ui.Segmented playerSeg = Ui.segmented(a, new String[]{"Otomatik", "YouTube Music", "Spotify"}, pi, i -> {
+            e.setPlayerPref(i == 1 ? Engine.PLAYER_YTM : i == 2 ? Engine.PLAYER_SPOTIFY : Engine.PLAYER_AUTO);
+            render();
+        });
+        mp.addView(playerSeg.view, full());
+        TextView mpd = Ui.text(a, "Otomatik: hangisinde müzik çalıyorsa ona uyum sağlar.", 12.5f, Ui.TEXT3, Ui.REGULAR);
+        mpd.setPadding(Ui.dp(a, 2), Ui.dp(a, 6), 0, Ui.dp(a, 4));
+        mp.addView(mpd);
+        divider(mp);
+
+        LinearLayout sph = Ui.hbox(a);
+        sph.addView(Ui.text(a, "Spotify hesabı", 15, Ui.TEXT, Ui.BOLD), Ui.lpw(1));
+        spStatus = Ui.pill(a, "", Ui.TEXT3);
+        sph.addView(spStatus);
+        mp.addView(sph, full());
+        TextView spd = Ui.text(a, "Spotify'ı Ahenk'e bağlarsan sıradaki şarkı doğrudan Spotify'ın sırasına eklenir; "
+                + "geçiş Spotify'ın kendi yumuşak geçişiyle olur. Bağlamadan da çalışır ama geçişler daha kaba olur.\n\n"
+                + "Spotify'ın kuralı gereği herkes kendi ücretsiz anahtarını alır ve Spotify Premium gerekir. Bir kere yapılır (3 dk):\n"
+                + "1) Aşağıdaki düğmeyle Spotify geliştirici panelini aç, Spotify hesabınla giriş yap\n"
+                + "2) \"Create app\" → App name: Ahenk, açıklama: kişisel\n"
+                + "3) Redirect URI kutusuna aşağıdaki adresi yapıştır ve \"Add\" de\n"
+                + "4) \"Web API\" kutusunu işaretle, kaydet\n"
+                + "5) Uygulamanın sayfasındaki \"Client ID\"yi kopyala, buraya yapıştır, Bağlan'a bas\n\n"
+                + "Arkadaşın da kendi anahtarını alabilir ya da sen panelde \"User Management\"a onun Spotify e-postasını "
+                + "ekleyebilirsin (en fazla 5 kişi).", 13, Ui.TEXT2, Ui.REGULAR);
+        spd.setPadding(0, Ui.dp(a, 6), 0, Ui.dp(a, 10));
+        spd.setLineSpacing(0, 1.15f);
+        mp.addView(spd);
+        LinearLayout spb1 = Ui.hbox(a);
+        TextView dash = Ui.secondaryButton(a, "🔑  Geliştirici paneli");
+        dash.setOnClickListener(v -> {
+            try {
+                a.startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://developer.spotify.com/dashboard")));
+            } catch (Exception ex) {
+                a.toast("Tarayıcı açılamadı");
+            }
+        });
+        spb1.addView(dash, Ui.lpw(1));
+        TextView copy = Ui.secondaryButton(a, "📋  Adresi kopyala");
+        copy.setOnClickListener(v -> {
+            android.content.ClipboardManager cm = a.getSystemService(android.content.ClipboardManager.class);
+            if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("Redirect URI", SpotifyApi.REDIRECT));
+            a.toast("Kopyalandı: " + SpotifyApi.REDIRECT);
+        });
+        spb1.addView(copy, Ui.margins(Ui.lpw(1), a, 10, 0, 0, 0));
+        mp.addView(spb1, full());
+        TextView redir = Ui.text(a, SpotifyApi.REDIRECT, 12.5f, Ui.TEXT3, Ui.MEDIUM);
+        redir.setTypeface(Typeface.MONOSPACE);
+        redir.setTextIsSelectable(true);
+        redir.setPadding(Ui.dp(a, 2), Ui.dp(a, 8), 0, 0);
+        mp.addView(redir);
+        spInput = new android.widget.EditText(a);
+        spInput.setBackground(Ui.round(a, Ui.SURFACE2, 14));
+        spInput.setHint("Client ID'yi buraya yapıştır");
+        spInput.setHintTextColor(Ui.TEXT3);
+        spInput.setTextColor(Ui.TEXT);
+        spInput.setTextSize(14);
+        spInput.setSingleLine(true);
+        spInput.setTypeface(Typeface.MONOSPACE);
+        int sip = Ui.dp(a, 12);
+        spInput.setPadding(sip, sip, sip, sip);
+        if (e.spotify.clientId() != null) spInput.setText(e.spotify.clientId());
+        mp.addView(spInput, Ui.margins(full(), a, 0, 10, 0, 0));
+        LinearLayout spb2 = Ui.hbox(a);
+        TextView spGo = Ui.primaryButton(a, "Spotify'a bağlan");
+        spGo.setOnClickListener(v -> {
+            String cid = spInput.getText().toString().trim();
+            if (!cid.matches("[0-9a-fA-F]{32}")) {
+                a.toast("Client ID 32 karakter olmalı (harf ve rakam)");
+                return;
+            }
+            a.toast("Spotify açılıyor; izin verince Ahenk'e dönülecek");
+            e.spotify.login(a, cid, (ok, msg) -> a.runOnUiThread(() -> {
+                a.toast(ok ? "✓ " + msg : "Olmadı: " + msg);
+                if (ok) {
+                    e.log("🎧 Spotify bağlandı" + (e.spotify.userName() != null ? ": " + e.spotify.userName() : ""));
+                    try {
+                        a.startActivity(new android.content.Intent(a, MainActivity.class)
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
+                    } catch (Exception ignored) {}
+                }
+                render();
+            }));
+        });
+        spb2.addView(spGo, Ui.lpw(1));
+        spRemove = Ui.secondaryButton(a, "Çıkış");
+        spRemove.setOnClickListener(v -> {
+            e.spotify.disconnect();
+            a.toast("Spotify bağlantısı kaldırıldı");
+            render();
+        });
+        spb2.addView(spRemove, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 10, 0, 0, 0));
+        mp.addView(spb2, Ui.margins(full(), a, 0, 10, 0, 0));
+        body.addView(mp, full());
 
         // ---- Last.fm ----
         body.addView(Ui.section(a, "Daha isabetli öneriler"));
@@ -154,7 +256,7 @@ public class SettingsPage extends Page {
         g.addView(fadeSeg.view, full());
         divider(g);
         swBack = switchRow(g, "Uygulamaya geri dön",
-                "Geçişte YouTube Music öne gelirse ve Ahenk açıksa, birkaç saniye sonra geri döner",
+                "Geçişte müzik uygulaması öne gelirse ve Ahenk açıksa, birkaç saniye sonra geri döner",
                 e.isReturnToApp(), (b, on) -> e.setReturnToApp(on));
         divider(g);
         g.addView(Ui.text(a, "Geçiş yöntemi", 15, Ui.TEXT, Ui.BOLD));
@@ -509,12 +611,12 @@ public class SettingsPage extends Page {
                     () -> a.toast("✓ En güncel sürümü kullanıyorsun"));
         });
         h.addView(chk, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 10, 0, 6));
-        TextView hd = Ui.text(a, "Tempo (BPM) ve enerji verisi Deezer'den alınır, şarkılar YouTube Music'te çalınır. "
-                + "Bu kişisel bir uygulamadır; YouTube Music'in resmi bir parçası değildir.", 13, Ui.TEXT2, Ui.REGULAR);
+        TextView hd = Ui.text(a, "Tempo (BPM) ve enerji verisi Deezer'den, tarz etiketleri Last.fm'den alınır; şarkılar YouTube Music'te ya da Spotify'da çalınır. "
+                + "Bu kişisel bir uygulamadır; YouTube Music'in ya da Spotify'ın resmi bir parçası değildir.", 13, Ui.TEXT2, Ui.REGULAR);
         hd.setPadding(0, Ui.dp(a, 6), 0, 0);
         hd.setLineSpacing(0, 1.15f);
         h.addView(hd);
-        TextView yt = Ui.secondaryButton(a, "YouTube Music'i aç");
+        TextView yt = Ui.secondaryButton(a, e.playerAcc() + " aç");
         yt.setOnClickListener(v -> a.openYtMusic());
         h.addView(yt, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 12, 0, 0));
         divider(h);
@@ -718,8 +820,21 @@ public class SettingsPage extends Page {
             lfmStatus.setBackground(Ui.round(a, ((lfOn ? Ui.GOOD : Ui.WARN) & 0x00FFFFFF) | 0x22000000, 12));
         }
         lfmRemove.setVisibility(lfOn ? View.VISIBLE : View.GONE);
+        boolean spOn = e.spotify.connected();
+        String sst = !spOn ? "Bağlı değil" : e.spotify.playerBlocked() ? "Bağlı · Premium yok" : "✓ Bağlı"
+                + (e.spotify.userName() != null && !e.spotify.userName().isEmpty() ? " · " + e.spotify.userName() : "");
+        if (!sst.contentEquals(spStatus.getText())) {
+            int col = !spOn ? Ui.TEXT3 : e.spotify.playerBlocked() ? Ui.WARN : Ui.GOOD;
+            spStatus.setText(sst);
+            spStatus.setTextColor(col);
+            spStatus.setBackground(Ui.round(a, (col & 0x00FFFFFF) | 0x22000000, 12));
+        }
+        spRemove.setVisibility(spOn ? View.VISIBLE : View.GONE);
         int s = e.getSilentState();
-        methodText.setText(s == Engine.SILENT_YES
+        if (e.isSpotify()) methodText.setText(e.spotify.connected() && !e.spotify.playerBlocked()
+                ? "Spotify ✓  Sıradaki şarkı Spotify'ın kendi sırasına ekleniyor."
+                : "Spotify uygulamasına çal komutu gönderilerek geçiliyor. Hesabını bağlarsan daha yumuşak olur.");
+        else methodText.setText(s == Engine.SILENT_YES
                 ? "Sessiz ✓  YouTube Music arka planda kalarak şarkı değiştiriyor."
                 : s == Engine.SILENT_NO
                 ? "YouTube Music öne gelerek geçiyor. Telefonundaki YT Music sürümü sessiz geçişi desteklemiyor."

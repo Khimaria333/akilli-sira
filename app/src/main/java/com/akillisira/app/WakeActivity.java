@@ -47,7 +47,7 @@ public class WakeActivity extends Activity {
                 status.setText(s < 6 ? "Uyanma listen hazırlanıyor…" : "Müzik başlatılıyor…");
                 if (s >= 45) startTone();
             } else {
-                status.setText("Müzik başlatılamadı, alarm çalıyor.\nKilidi açarsan YouTube Music'i başlatabilirim.");
+                status.setText("Müzik başlatılamadı, alarm çalıyor.\nKilidi açarsan müziği başlatabilirim.");
             }
             h.postDelayed(this, 1000);
         }
