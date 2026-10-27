@@ -1,0 +1,60 @@
+name: Ahenk bulut (Cloudflare)
+
+on:
+  push:
+    branches: [main]
+    paths: ['cloud/**', '.github/workflows/cloud.yml']
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloud
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      LASTFM_KEY: ${{ secrets.LASTFM_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cloudflare anahtarları var mı?
+        id: check
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::CLOUDFLARE_API_TOKEN ve CLOUDFLARE_ACCOUNT_ID eklenmemiş; bulut yayını atlandı."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.skip != '1'
+        with:
+          node-version: 20
+
+      - name: Wrangler
+        if: steps.check.outputs.skip != '1'
+        run: npm install --no-save --no-audit --no-fund wrangler@4
+
+      - name: Veritabanı (D1)
+        if: steps.check.outputs.skip != '1'
+        run: |
+          ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="ahenk") | .uuid' | head -1)
+          if [ -z "$ID" ]; then
+            npx wrangler d1 create ahenk
+            ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="ahenk") | .uuid' | head -1)
+          fi
+          echo "D1: $ID"
+          sed -i "s/__D1_ID__/$ID/" wrangler.toml
+          npx wrangler d1 execute ahenk --remote --file=schema.sql
+
+      - name: Yayınla
+        if: steps.check.outputs.skip != '1'
+        run: |
+          npx wrangler deploy | tee deploy.log
+          URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          if [ -n "$LASTFM_KEY" ]; then echo "$LASTFM_KEY" | npx wrangler secret put LASTFM_KEY; fi
+          echo "## Ahenk bulut yayında" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Adres: $URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "Spotify Redirect URI: $URL/callback" >> "$GITHUB_STEP_SUMMARY"

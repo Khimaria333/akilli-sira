@@ -20,6 +20,10 @@ sıradaki şarkıyı seçer ve şarkı bitince sesi yumuşakça kısıp ona geç
 - **Görünüm:** Koyu ya da AMOLED siyah, beş vurgu rengi (kapak rengi dahil); dört boyutlu widget.
 - **Uygulama içi güncelleme:** Yeni sürüm çıkınca tek dokunuşla kurulur.
 
+## iPhone ve her cihaz: Ahenk Bulut (Spotify)
+iOS başka bir uygulamada çalan şarkıyı okumaya izin vermediği için iPhone'da Ahenk bulutta çalışır:
+Spotify'ı bağlarsın, Ahenk her dakika bakıp sıradakini Spotify'ın sırasına ekler. Kurulum: [cloud/README.md](cloud/README.md).
+
 ## Kurulum
 1. [Releases](../../releases/latest) sayfasından `Ahenk.apk` dosyasını indir, aç, "bilinmeyen kaynaklara izin ver" de, kur.
 2. Uygulamayı aç; kısa tanıtımdan sonra **Bildirim erişimi** ve **Diğer uygulamaların üzerinde göster** izinlerini ver.

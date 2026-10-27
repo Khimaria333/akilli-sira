@@ -3,6 +3,7 @@ name: APK oluştur
 on:
   push:
     branches: ['**']
+    paths-ignore: ['cloud/**', '.github/workflows/cloud.yml', 'README.md', 'docs/**']
   workflow_dispatch:
 
 permissions:
