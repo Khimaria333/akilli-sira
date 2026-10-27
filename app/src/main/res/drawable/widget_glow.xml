@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Kapak renginde ışıma (kodda renklendirilir) -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient android:type="radial" android:centerX="0.15" android:centerY="0.2"
+        android:gradientRadius="160dp" android:startColor="#FFFFFFFF" android:centerColor="#40FFFFFF"
+        android:endColor="#00FFFFFF" />
+    <corners android:radius="24dp" />
+</shape>

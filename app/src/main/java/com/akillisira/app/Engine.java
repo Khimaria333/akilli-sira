@@ -204,6 +204,20 @@ public final class Engine {
 
     public void forceWidgets() { notifier.forceWidgets(this); }
 
+    /** YouTube Music'in çalan şarkı için gösterdiği kapak (yoksa null). */
+    public android.graphics.Bitmap nowArt() {
+        try {
+            android.media.MediaMetadata m = controller != null ? controller.getMetadata() : null;
+            if (m == null) return null;
+            android.graphics.Bitmap b = m.getBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART);
+            if (b == null) b = m.getBitmap(android.media.MediaMetadata.METADATA_KEY_ART);
+            if (b == null) b = m.getBitmap(android.media.MediaMetadata.METADATA_KEY_DISPLAY_ICON);
+            return b;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
     public void refreshNotification() { notifier.reset(); notifyChanged(); }
 
     /** Hava ayarı + bağlam: gece ya da uyku zamanlayıcısı açıkken sakinleştir. */
@@ -377,6 +391,7 @@ public final class Engine {
 
     /** Servis her yarım saniyede bir çalma konumunu bildirir. */
     public void onPoll(long positionMs, long durationMs, boolean isPlaying) {
+        if (isPlaying) notifier.tickWidgets(this);
         nowPositionMs = positionMs;
         if (durationMs > 0) nowDurationMs = durationMs;
         playing = isPlaying;

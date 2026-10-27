@@ -23,7 +23,7 @@ public final class Notifier {
 
     private final Context app;
     private final NotificationManager nm;
-    private String lastNotifSig, lastWidgetSig;
+    private String lastNotifSig;
     private boolean channelReady;
 
     public Notifier(Context app) {
@@ -122,43 +122,20 @@ public final class Notifier {
     // Widget
     // =====================================================================
 
-    public void updateWidgets(Engine e) {
-        AppWidgetManager wm = AppWidgetManager.getInstance(app);
-        ComponentName cn = new ComponentName(app, WidgetProvider.class);
-        int[] ids = wm.getAppWidgetIds(cn);
-        if (ids == null || ids.length == 0) return;
-        Track p = e.pick;
-        String sig = e.nowTitle + "|" + e.nowArtist + "|" + (p != null ? p.key() : "-") + "|" + e.computing
-                + "|" + (e.seed != null && e.seed.coverUrl != null) + "|" + (p != null && p.coverUrl != null);
-        if (sig.equals(lastWidgetSig)) return;
-        lastWidgetSig = sig;
+    private Widgets widgets;
 
-        RemoteViews rv = new RemoteViews(app.getPackageName(), R.layout.widget);
-        if (e.nowTitle == null) {
-            rv.setTextViewText(R.id.w_now_title, "Bir şarkı aç");
-            rv.setTextViewText(R.id.w_now_artist, "YouTube Music'te çalmaya başla");
-            rv.setTextViewText(R.id.w_next_title, "—");
-            rv.setImageViewResource(R.id.w_cover, R.drawable.logo_mark);
-        } else {
-            rv.setTextViewText(R.id.w_now_title, e.nowTitle);
-            rv.setTextViewText(R.id.w_now_artist, e.nowArtist);
-            rv.setTextViewText(R.id.w_next_title, p != null ? p.title + " · " + p.artist
-                    : e.computing ? "Seçiliyor…" : "—");
-            String cover = e.seed != null ? e.seed.coverUrl : null;
-            Bitmap bmp = cover != null ? ImageLoader.cached(cover) : null;
-            if (bmp != null) rv.setImageViewBitmap(R.id.w_cover, bmp);
-            else {
-                rv.setImageViewResource(R.id.w_cover, R.drawable.logo_mark);
-                if (cover != null) ImageLoader.fetch(cover, x -> { lastWidgetSig = null; updateWidgets(e); });
-            }
-        }
-        boolean hasNext = p != null;
-        rv.setViewVisibility(R.id.w_skip, hasNext ? View.VISIBLE : View.GONE);
-        rv.setViewVisibility(R.id.w_dislike, hasNext ? View.VISIBLE : View.GONE);
-        rv.setOnClickPendingIntent(R.id.w_skip, action(ActionReceiver.SKIP));
-        rv.setOnClickPendingIntent(R.id.w_dislike, action(ActionReceiver.DISLIKE_NEXT));
-        rv.setOnClickPendingIntent(R.id.w_root, openApp());
-        wm.updateAppWidget(ids, rv);
+    private Widgets widgets() {
+        if (widgets == null) widgets = new Widgets(app);
+        return widgets;
+    }
+
+    public void updateWidgets(Engine e) {
+        widgets().update(e, false);
+    }
+
+    /** Çalarken birkaç saniyede bir ilerleme ve geri sayımı tazeler. */
+    public void tickWidgets(Engine e) {
+        try { widgets().tick(e); } catch (Exception ex) { report(e, "Widget", ex); }
     }
 
     private String lastError;
@@ -174,13 +151,11 @@ public final class Notifier {
     /** Bir sonraki güncellemede bildirimi yeniden kur. */
     public void reset() {
         lastNotifSig = null;
-        lastWidgetSig = null;
     }
 
     /** Widget eklendiğinde motor henüz veri almamışsa da bir şey gösterebilmek için. */
     public void forceWidgets(Engine e) {
-        lastWidgetSig = null;
-        updateWidgets(e);
+        try { widgets().update(e, true); } catch (Exception ex) { report(e, "Widget", ex); }
     }
 
     // =====================================================================
