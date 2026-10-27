@@ -41,6 +41,7 @@ jobs:
         shell: bash
         run: |
           set +e
+          if ! [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]; then echo "::warning title=Account ID::Kayıtlı Account ID ${#CLOUDFLARE_ACCOUNT_ID} karakter (32 olmalı); hesap anahtardan bulunacak"; unset CLOUDFLARE_ACCOUNT_ID; fi
           fail() { echo "::error title=$1::$(echo "$2" | tr '\n' ' ' | sed 's/%/%25/g' | cut -c1-900)"; exit 1; }
           npx wrangler whoami > who.log 2>&1 || fail "Cloudflare girişi" "$(cat who.log)"
           npx wrangler d1 list --json > list.json 2> list.err
@@ -62,6 +63,7 @@ jobs:
         shell: bash
         run: |
           set +e
+          if ! [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]; then unset CLOUDFLARE_ACCOUNT_ID; fi
           npx wrangler deploy > deploy.log 2>&1
           RC=$?
           cat deploy.log
