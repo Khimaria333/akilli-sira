@@ -146,8 +146,9 @@ public class NewReleases extends JobService {
 
     /** Yeni (daha önce bildirilmemiş, son 10 gün) çıkışları bildir. */
     static void check(Context c) {
-        Engine e = Engine.get(c);
-        List<Deezer.Album> list = recent(e.deezer, e.store, 10, 30);
+        // Motoru ayağa kaldırmadan: sadece beğenileri oku, Deezer'a sor
+        DiskCache.init(c.getApplicationContext());
+        List<Deezer.Album> list = recent(new Deezer(), new Store(c.getApplicationContext()), 10, 30);
         SharedPreferences p = c.getSharedPreferences("yeni_cikanlar", Context.MODE_PRIVATE);
         Set<String> seen = new HashSet<>(p.getStringSet("seen", new HashSet<>()));
         boolean first = !p.getBoolean("init", false);
