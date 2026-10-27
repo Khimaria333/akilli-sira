@@ -38,23 +38,38 @@ jobs:
 
       - name: Veritabanı (D1)
         if: steps.check.outputs.skip != '1'
+        shell: bash
         run: |
-          ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="ahenk") | .uuid' | head -1)
+          set +e
+          fail() { echo "::error title=$1::$(echo "$2" | tr '\n' ' ' | sed 's/%/%25/g' | cut -c1-900)"; exit 1; }
+          npx wrangler whoami > who.log 2>&1 || fail "Cloudflare girişi" "$(cat who.log)"
+          npx wrangler d1 list --json > list.json 2> list.err
+          [ $? -eq 0 ] || fail "D1 listesi" "$(cat list.err) $(cat list.json)"
+          ID=$(jq -r '.[] | select(.name=="ahenk") | .uuid' list.json 2>/dev/null | head -1)
           if [ -z "$ID" ]; then
-            npx wrangler d1 create ahenk
-            ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="ahenk") | .uuid' | head -1)
+            npx wrangler d1 create ahenk > create.log 2>&1 || fail "D1 oluşturma" "$(cat create.log)"
+            npx wrangler d1 list --json > list.json 2> list.err
+            ID=$(jq -r '.[] | select(.name=="ahenk") | .uuid' list.json 2>/dev/null | head -1)
           fi
+          [ -n "$ID" ] || fail "D1 kimliği" "$(cat list.json list.err create.log 2>/dev/null)"
           echo "D1: $ID"
           sed -i "s/__D1_ID__/$ID/" wrangler.toml
-          npx wrangler d1 execute ahenk --remote --file=schema.sql
+          npx wrangler d1 execute ahenk --remote --file=schema.sql > exec.log 2>&1 || fail "Şema" "$(cat exec.log)"
+          echo "::notice title=D1::Veritabanı hazır"
 
       - name: Yayınla
         if: steps.check.outputs.skip != '1'
+        shell: bash
         run: |
-          npx wrangler deploy | tee deploy.log
+          set +e
+          npx wrangler deploy > deploy.log 2>&1
+          RC=$?
+          cat deploy.log
+          if [ $RC -ne 0 ]; then echo "::error title=Yayın::$(tr '\n' ' ' < deploy.log | cut -c1-900)"; exit 1; fi
           URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
           if [ -n "$LASTFM_KEY" ]; then echo "$LASTFM_KEY" | npx wrangler secret put LASTFM_KEY; fi
           echo "## Ahenk bulut yayında" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Adres: $URL" >> "$GITHUB_STEP_SUMMARY"
           echo "Spotify Redirect URI: $URL/callback" >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Ahenk adresi::$URL"
