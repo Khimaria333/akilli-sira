@@ -176,13 +176,15 @@ public final class Scorer {
             // ---- TEMPO ----
             double pSeed = Double.NaN, pRange = Double.NaN;
             if (seedBpm > 0 && c.hasBpm()) pSeed = closeness(bpmDistance(c.bpm, seedBpm));
-            if (x.target != null && c.hasBpm()) pRange = rangeCloseness(c.bpm, x.target.bpmLo, x.target.bpmHi);
+            if (x.target != null && !x.target.noTempo && c.hasBpm()) pRange = rangeCloseness(c.bpm, x.target.bpmLo, x.target.bpmHi);
             double pBpm;
-            if (!Double.isNaN(pSeed) && !Double.isNaN(pRange)) pBpm = 0.55 * pSeed + 0.45 * pRange;
+            boolean strict = x.target != null && x.target.tempoStrict;
+            if (strict) pBpm = !Double.isNaN(pRange) ? pRange : 0.15;   // koşu: hedef tempo esas
+            else if (!Double.isNaN(pSeed) && !Double.isNaN(pRange)) pBpm = 0.55 * pSeed + 0.45 * pRange;
             else if (!Double.isNaN(pSeed)) pBpm = pSeed;
             else if (!Double.isNaN(pRange)) pBpm = pRange;
             else pBpm = 0.35;
-            k[C_TEMPO] += 25 * pBpm;
+            k[C_TEMPO] += 25 * pBpm * (x.target != null ? x.target.tempoWeight : 1);
             if (c.hasBpm() && pBpm >= 0.6) {
                 if (seed != null && seed.hasBpm()) {
                     String extra = "";
@@ -208,12 +210,13 @@ public final class Scorer {
                 double ovA = LastFm.overlap(c.tags, x.target.tags);
                 double ovT = LastFm.overlap(c.trackTags, x.target.tags);
                 double ov = ovT >= 0 && ovA >= 0 ? 0.6 * ovT + 0.4 * ovA : ovT >= 0 ? ovT : ovA;
+                double mw = x.target.moodWeight;
                 if (ov > 0) {
-                    k[C_MOOD] += 25 * ov;
+                    k[C_MOOD] += 25 * ov * mw;
                     if (ov >= 0.3) why.add("ruh haline uygun");
                 } else if (ov == 0) {
                     // etiketleri biliniyor ama hiçbiri uymuyor (tür istenmişse türü zaten tutturdu, az ceza)
-                    k[C_MOOD] -= x.target.hasStyle() ? 5 : 14;
+                    k[C_MOOD] -= (x.target.hasStyle() ? 5 : 14) * mw;
                 }
             }
 

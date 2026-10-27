@@ -138,6 +138,36 @@ public final class Notifier {
         try { widgets().tick(e); } catch (Exception ex) { report(e, "Widget", ex); }
     }
 
+    /** Kulaklık bağlanınca: "şu ana uygun bir liste başlatayım mı?" (2 dk sonra kendiliğinden kalkar). */
+    public static final int HP_ID = 33;
+
+    public void headphonesPrompt(String label) {
+        if (nm == null || !canPost()) return;
+        String ch = "kulaklik";
+        if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(ch) == null) {
+            NotificationChannel c = new NotificationChannel(ch, "Kulaklık bağlanınca", NotificationManager.IMPORTANCE_HIGH);
+            c.setDescription("Kulaklık takınca liste başlatmayı önerir");
+            c.setSound(null, null);
+            nm.createNotificationChannel(c);
+        }
+        Intent go = new Intent(app, ActionReceiver.class).setAction(ActionReceiver.START).putExtra("what", "simdi");
+        PendingIntent pGo = PendingIntent.getBroadcast(app, 3301, go, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(app, ch) : new Notification.Builder(app);
+        b.setSmallIcon(R.drawable.ic_stat)
+                .setContentTitle("🎧 Kulaklık bağlandı")
+                .setContentText("Şu ana uygun liste: " + label)
+                .setColor(0xFFFF4D6D)
+                .setAutoCancel(true)
+                .setContentIntent(pGo)
+                .addAction(new Notification.Action.Builder(null, "▶ Başlat", pGo).build());
+        if (Build.VERSION.SDK_INT >= 26) b.setTimeoutAfter(120000);
+        try { nm.notify(HP_ID, b.build()); } catch (Exception ignored) {}
+    }
+
+    public void cancelHeadphonesPrompt() {
+        if (nm != null) nm.cancel(HP_ID);
+    }
+
     private String lastError;
 
     private void report(Engine e, String what, Exception ex) {

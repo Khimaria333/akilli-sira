@@ -62,7 +62,7 @@ public final class Engine {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final ExecutorService discoverWorker = Executors.newSingleThreadExecutor();
     private final ExecutorService net = Executors.newCachedThreadPool();
-    private final Deezer deezer = new Deezer();
+    final Deezer deezer = new Deezer();
     public final LastFm lastfm = new LastFm();
     private final SharedPreferences prefs;
     private final SharedPreferences pairs;   // şarkı → daha önce önerilenler (kalıcı)
@@ -94,9 +94,16 @@ public final class Engine {
 
     // Kalıcı veriler, bildirim/widget
     public final Store store;
-    private final Notifier notifier;
+    final Notifier notifier;
     private String lastLoggedKey;
     private boolean carActive;
+
+    // ---- Koşu modu ----
+    private volatile boolean runActive;
+    private volatile int cadence;          // son ölçülen adım/dk (0 = bilinmiyor)
+    private double cadenceSmooth;
+    private int runBpmUsed;
+    private long lastRunRecompute;
 
     // Keşfet
     public boolean discoverLoading;
@@ -269,6 +276,12 @@ public final class Engine {
     }
 
     public Moods.Target sessionTarget() {
+        if (runActive) return runTarget();
+        return baseTarget();
+    }
+
+    /** Koşu modu dışındaki oturum hedefi (tür, cümle, ruh hali, rutin, hava). */
+    private Moods.Target baseTarget() {
         if (sessionExpired()) return routineTarget();
         Genres.Genre g = Genres.byId(getGenreId());
         if (g != null) return Genres.target(g);
@@ -278,10 +291,121 @@ public final class Engine {
         return mt != null ? mt : routineTarget();
     }
 
+    // =====================================================================
+    // Koşu modu: adım temposuna uyan BPM
+    // =====================================================================
+
+    public boolean isRunActive() { return runActive; }
+    public int getCadence() { return cadence; }
+
+    /** Hedef BPM: ölçülen kadans (yumuşatılmış); henüz ölçülmediyse 160. */
+    public int runBpm() {
+        double c = cadenceSmooth > 0 ? cadenceSmooth : 160;
+        return (int) Math.round(Math.max(95, Math.min(195, c)));
+    }
+
+    private Moods.Target runTarget() {
+        Moods.Target t = new Moods.Target();
+        int b = runBpm();
+        t.bpmLo = b - 5;
+        t.bpmHi = b + 5;
+        t.gain = b >= 140 ? -5.5 : -7.0;
+        t.tempoStrict = true;
+        t.tempoWeight = 2.2;
+        Moods.Target base = baseTarget();
+        if (base != null && base.hasStyle()) {   // "rap ile koşu": tür korunur
+            t.copyStyleFrom(base);
+            t.queries.addAll(base.styleQueries);
+        }
+        if (isTurkish()) { t.queries.add("koşu şarkıları"); t.queries.add("türkçe spor"); t.queries.add("türkçe hareketli"); }
+        else { t.queries.add("running"); t.queries.add("workout hits"); t.queries.add("running motivation"); }
+        t.tags.add("workout");
+        t.tags.add("running");
+        t.tags.add("energetic");
+        t.label = "🏃 Koşu · " + b + " BPM" + (t.styleLabel != null ? "  ·  " + t.styleLabel : "");
+        return t;
+    }
+
+    /** Koşu modunu başlat (izinler arayüzde alınmış olmalı). */
+    public void startRun() {
+        if (runActive) return;
+        onRunServiceStarted();
+        RunService.start(app);
+        log("🏃 Koşu modu açık: şarkılar adım tempona göre seçilecek");
+        refresh();
+        notifyChanged();
+    }
+
+    /** Servis (yeniden) başladığında. */
+    void onRunServiceStarted() {
+        if (runActive) return;
+        runActive = true;
+        cadence = 0;
+        cadenceSmooth = 0;
+        runBpmUsed = runBpm();
+        lastRunRecompute = SystemClock.elapsedRealtime();
+    }
+
+    public void stopRun() {
+        if (!runActive) return;
+        runActive = false;
+        cadence = 0;
+        RunService.stop(app);
+        log("🏃 Koşu modu kapandı");
+        refresh();
+        notifyChanged();
+    }
+
+    /** RunService her birkaç saniyede bildirir. Tempo belirgin değişince sıradakini yeniden seç. */
+    public void setCadence(int cad) {
+        if (!runActive) return;
+        cadence = cad;
+        if (cad > 0) cadenceSmooth = cadenceSmooth <= 0 ? cad : cadenceSmooth * 0.6 + cad * 0.4;
+        int b = runBpm();
+        long now = SystemClock.elapsedRealtime();
+        if (Math.abs(b - runBpmUsed) >= 8 && now - lastRunRecompute > 20000) {
+            log("🏃 Tempo " + runBpmUsed + " → " + b + " BPM: sıradaki yeniden seçiliyor");
+            runBpmUsed = b;
+            lastRunRecompute = now;
+            refresh();
+        }
+        notifyChanged();
+    }
+
+    /** Keşfet'ten: koşu modunu aç ve tempoya uygun liste hazırla. */
+    public void discoverRun() {
+        startRun();
+        lastDiscover = this::discoverRun;
+        runDiscover(runTarget(), isTurkish(), null);
+    }
+
     /** Elle seçilmiş mod yokken geçerli rutin (otomatik ruh hali planı). */
     private Moods.Target routineTarget() {
         Routines.Routine r = Routines.active(app);
-        return r != null ? r.target(isTurkish()) : null;
+        return r != null ? r.target(isTurkish()) : weatherTarget();
+    }
+
+    /** Serbest akışta hava durumu: tempoya karışmadan ruh halini hafifçe kaydırır. */
+    private Moods.Target weatherTarget() {
+        if (!Weather.isOn(app)) return null;
+        Weather.Now w = Weather.current();
+        Weather.refresh(app, false, null);
+        if (w == null) return null;
+        Moods.Target t = new Moods.Target();
+        t.noTempo = true;
+        t.bpmLo = 40;
+        t.bpmHi = 220;
+        t.gain = Double.NaN;
+        t.moodWeight = 0.4;
+        t.tags.addAll(w.tags());
+        t.label = w.label() + "  ·  havaya göre";
+        return t;
+    }
+
+    /** Ruh hali seçilmemiş, sadece hava durumu etkili mi (arayüzde "Kapat" gösterilmesin). */
+    public boolean weatherOnly() {
+        return !runActive && getVibe() == null && getMoodId() == null && getGenreId() == null
+                && Routines.active(app) == null && weatherTarget() != null;
     }
 
     public Routines.Routine activeRoutine() {
@@ -375,7 +499,11 @@ public final class Engine {
             return;
         }
 
-        if (ytmAutoAdvanced && isAuto() && planned != null && !key.equals(planned.key())) {
+        int extIdx = externalIndex(title);
+        if (extIdx < 0 && !externalTitles.isEmpty() && SystemClock.elapsedRealtime() - externalStarted > 90000) {
+            externalTitles.clear();   // kullanıcı başka bir şey açtı: aktarılan liste bitti
+        }
+        if (ytmAutoAdvanced && isAuto() && planned != null && !key.equals(planned.key()) && extIdx < 0) {
             log("YT Music kendi şarkısına geçti, düzeltiliyor");
             fire(planned, false);
             return;
@@ -406,7 +534,7 @@ public final class Engine {
         }
 
         boolean stopHere = sleepFinishing;
-        if (isPlaying && !firedForCurrent && nowDurationMs > 30000 && (stopHere || (isAuto() && pick != null))) {
+        if (isPlaying && !firedForCurrent && nowDurationMs > 30000 && (stopHere || (isAuto() && pick != null && !externalHolds()))) {
             long fadeMs = isFade() || stopHere ? Math.max(getFadeSec(), stopHere ? 6 : 0) * 1000L : 0;
             if (fadeMs > 0 && !fadingOut && savedVolume < 0 && lastRemainingMs <= fadeMs + 250) {
                 startFadeOut(Math.max(500, lastRemainingMs - 350));
@@ -674,6 +802,7 @@ public final class Engine {
 
     /** Geçişe kalan süre (ms); bilinmiyorsa -1. */
     public long msToSwitch() {
+        if (externalHolds()) return -1;
         if (pick == null || !isAuto() || nowDurationMs <= 0 || lastRemainingMs == Long.MAX_VALUE) return -1;
         return Math.max(0, lastRemainingMs - (isFade() ? 350 : 1500));
     }
@@ -1618,6 +1747,529 @@ public final class Engine {
             }
         });
     }
+
+    // =====================================================================
+    // Hazır akışlar: yeni çıkanlar, günün karışımı, hava, kulaklık, Blend
+    // =====================================================================
+
+    private volatile String pendingLabel;
+
+    /** Kendi aday listesini üreten Keşfet akışları için ortak çatı. */
+    private void runCustomDiscover(String label, java.util.concurrent.Callable<List<Track>> producer, String emptyMsg) {
+        final int gen = ++discoverGeneration;
+        pendingLabel = null;
+        discoverLoading = true;
+        discoverStage = "Hazırlanıyor…";
+        discoverProblem = null;
+        discoverResults = new ArrayList<>();
+        discoverCurve = null;
+        discoverDj = false;
+        discoverLabel = label;
+        notifyChanged();
+        discoverWorker.submit(() -> {
+            try {
+                List<Track> out = producer.call();
+                main.post(() -> {
+                    if (gen != discoverGeneration) return;
+                    discoverLoading = false;
+                    discoverResults = out;
+                    if (pendingLabel != null) discoverLabel = pendingLabel;
+                    if (out.isEmpty()) {
+                        discoverProblem = emptyMsg;
+                        autoStartDiscover = false;
+                    } else {
+                        prefetchVideoId(out.get(0));
+                        if (autoStartDiscover) {
+                            autoStartDiscover = false;
+                            playNow(out.get(0), out, false);
+                        }
+                    }
+                    notifyChanged();
+                });
+            } catch (Exception ex) {
+                final String msg = ex.getMessage() != null ? ex.getMessage() : ex.toString();
+                main.post(() -> {
+                    if (gen != discoverGeneration) return;
+                    discoverLoading = false;
+                    autoStartDiscover = false;
+                    discoverProblem = msg.startsWith("MSG:") ? msg.substring(4)
+                            : "NET".equals(msg) || ex instanceof java.io.IOException
+                            ? "Müzik servislerine şu an ulaşılamıyor. İnternet bağlantını kontrol edip tekrar dene."
+                            : "Liste hazırlanamadı: " + msg;
+                    log("Keşfet hatası: " + msg);
+                    notifyChanged();
+                });
+            }
+        });
+    }
+
+    private void clearSessionQuiet() {
+        prefs.edit().remove("vibe").remove("mood").remove("place").remove("genre").apply();
+    }
+
+    private Set<String> recentAndDisliked(int recent) {
+        Set<String> out = new HashSet<>(store.dislikedKeys());
+        List<String> h = new ArrayList<>(history);
+        for (int i = h.size() - 1, n = 0; i >= 0 && n < recent; i--, n++) out.add(h.get(i));
+        return out;
+    }
+
+    /** Aynı sanatçıdan en fazla 'per' şarkı. */
+    private static List<Track> capArtists(List<Track> in, int per, int max) {
+        List<Track> out = new ArrayList<>();
+        Map<String, Integer> n = new HashMap<>();
+        for (Track t : in) {
+            String a = Text.norm(Text.mainArtist(t.artist));
+            int c = n.getOrDefault(a, 0);
+            if (c >= per) continue;
+            n.put(a, c + 1);
+            out.add(t);
+            if (out.size() >= max) break;
+        }
+        return out;
+    }
+
+    // ---- 🆕 Yeni çıkanlar ----
+
+    public void discoverNew() {
+        clearSessionQuiet();
+        lastDiscover = this::discoverNew;
+        runCustomDiscover("🆕 Yeni çıkanlar · sevdiğin sanatçılardan", () -> {
+            if (store.liked().isEmpty()) {
+                throw new Exception("MSG:Yeni çıkanlar beğendiğin sanatçılardan gelir. Önce birkaç şarkıyı ❤️ ile beğen.");
+            }
+            stage(discoverGeneration, "Sevdiğin sanatçıların son çıkışlarına bakılıyor…");
+            List<Deezer.Album> albums = NewReleases.recent(deezer, store, 75, 30);
+            Set<String> skip = new HashSet<>(store.dislikedKeys());
+            List<Track> out = new ArrayList<>();
+            for (Deezer.Album al : albums) {
+                int n = "single".equals(al.type) ? 2 : 3;
+                for (Track t : safe(() -> deezer.albumTracks(al, n, "new"))) {
+                    if (skip.contains(t.key())) continue;
+                    t.reason = "🆕 " + NewReleases.age(al.date) + " · " + NewReleases.typeWord(al.type)
+                            + ("single".equals(al.type) ? "" : ": " + al.title);
+                    out.add(t);
+                }
+                if (out.size() >= 30) break;
+            }
+            return capArtists(out, 4, 30);
+        }, "Son 2,5 ayda beğendiğin sanatçılardan yeni çıkış yok. ❤️ ile daha çok sanatçı beğendikçe burası dolar.");
+    }
+
+    // ---- ☀️ Günün karışımı ----
+
+    private static String today() {
+        return new java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.ROOT).format(new java.util.Date());
+    }
+
+    public void discoverDaily() { dailyMix(false); }
+
+    public void dailyAndPlay() {
+        autoStartDiscover = true;
+        dailyMix(false);
+    }
+
+    private void dailyMix(boolean fresh) {
+        clearSessionQuiet();
+        lastDiscover = () -> dailyMix(true);
+        String day = new java.text.SimpleDateFormat("EEEE", java.util.Locale.forLanguageTag("tr")).format(new java.util.Date());
+        runCustomDiscover("☀️ Günün karışımı · " + day, () -> {
+            String key = today();
+            if (!fresh && key.equals(prefs.getString("dailyDay", null))) {
+                List<Track> cached = tracksFromJson(prefs.getString("dailyList", "[]"));
+                if (!cached.isEmpty()) return cached;
+            }
+            List<Track> mix = buildDaily(key);
+            if (!mix.isEmpty()) prefs.edit().putString("dailyDay", key).putString("dailyList", tracksToJson(mix)).apply();
+            return mix;
+        }, "Günün karışımı için önce birkaç şarkıyı ❤️ ile beğen ya da biraz müzik dinle.");
+    }
+
+    private List<Track> buildDaily(String day) throws Exception {
+        java.util.Random r = new java.util.Random(day.hashCode() * 7919L + store.liked().size());
+        boolean turkish = isTurkish();
+        Map<Long, String> artists = NewReleases.likedArtists(store, 25);
+        if (artists.size() < 3) {   // beğeni azsa: en çok dinlenenlerden
+            stage(discoverGeneration, "Dinleme geçmişine bakılıyor…");
+            Map<String, Integer> cnt = new HashMap<>();
+            List<Store.Play> plays = store.plays();
+            for (int i = 0; i < plays.size() && i < 400; i++) {
+                String a = Text.mainArtist(plays.get(i).artist);
+                if (!a.isEmpty()) cnt.put(a, cnt.getOrDefault(a, 0) + 1);
+            }
+            List<String> top = new ArrayList<>(cnt.keySet());
+            top.sort((x, y) -> cnt.get(y) - cnt.get(x));
+            for (int i = 0; i < top.size() && artists.size() < 8; i++) {
+                String nm = top.get(i);
+                for (Track t : safe(() -> deezer.search("artist:\"" + nm + "\"", 1))) if (t.artistId > 0) artists.put(t.artistId, nm);
+            }
+        }
+        if (artists.isEmpty()) return new ArrayList<>();
+        List<Long> ids = new ArrayList<>(artists.keySet());
+        Collections.shuffle(ids, r);
+        Set<String> liked = store.likedKeys();
+        List<Track> pool = new ArrayList<>();
+
+        stage(discoverGeneration, "Sevdiğin şarkılardan seçiliyor…");
+        List<Store.Liked> lk = new ArrayList<>(store.liked());
+        Collections.shuffle(lk, r);
+        for (int i = 0; i < lk.size() && i < 6; i++) {
+            Track t = lk.get(i).toTrack();
+            t.reason = "❤️ sevdiğin bir şarkı";
+            pool.add(t);
+        }
+        stage(discoverGeneration, "Sevdiğin sanatçılara bakılıyor…");
+        for (int i = 0; i < ids.size() && i < 5; i++) {
+            long id = ids.get(i);
+            List<Track> top = new ArrayList<>(safe(() -> deezer.artistTop(id, 12, "same")));
+            Collections.shuffle(top, r);
+            int n = 0;
+            for (Track t : top) {
+                if (liked.contains(t.key())) continue;
+                t.reason = "🎤 " + Text.mainArtist(t.artist);
+                pool.add(t);
+                if (++n >= 2) break;
+            }
+        }
+        stage(discoverGeneration, "Benzer sanatçılar keşfediliyor…");
+        for (int i = 0; i < ids.size() && i < 5; i++) {
+            long id = ids.get(i);
+            String from = artists.get(id);
+            List<Long> rel = new ArrayList<>(safe(() -> deezer.related(id, 8)));
+            Collections.shuffle(rel, r);
+            for (int k = 0; k < rel.size() && k < 2; k++) {
+                long rid = rel.get(k);
+                if (artists.containsKey(rid)) continue;
+                List<Track> top = new ArrayList<>(safe(() -> deezer.artistTop(rid, 8, "related")));
+                if (top.isEmpty()) continue;
+                Track t = top.get(r.nextInt(Math.min(4, top.size())));
+                t.reason = "✨ " + from + " sevenlere";
+                pool.add(t);
+            }
+        }
+        Map<String, Integer> prof = profile();
+        if (lastfm.enabled() && !prof.isEmpty()) {
+            stage(discoverGeneration, "Tarzına uygun yeni şarkılar aranıyor…");
+            List<String> tags = new ArrayList<>(prof.keySet());
+            for (int i = 0; i < tags.size() && i < 2; i++) {
+                String tg = tags.get(i);
+                List<String[]> top = new ArrayList<>(lastfm.tagTopTracks(tg, 60));
+                Collections.shuffle(top, r);
+                int n = 0;
+                for (String[] at : top) {
+                    for (Track h : safe(() -> deezer.search("artist:\"" + at[0] + "\" track:\"" + at[1] + "\"", 1))) {
+                        h.reason = "🧭 tarzın: " + tg;
+                        pool.add(h);
+                        n++;
+                    }
+                    if (n >= 4) break;
+                }
+            }
+        }
+        List<Track> list = dedupe(pool, "", recentAndDisliked(15));
+        classifyLanguages(list);
+        if (turkish) list = keepTurkish(list);
+        stage(discoverGeneration, "Tempo ve enerji analiz ediliyor…");
+        deezer.fillDetailsAll(list);
+        // Sırala: sakin başla, ortada yüksel, sonda yumuşa (DJ eğrisi gibi ama hafif)
+        Collections.shuffle(list, r);
+        List<Track> capped = capArtists(list, 2, 26);
+        List<Track> ordered = Scorer.djOrder(capped, capped.size(), new double[capped.size()]);
+        return ordered.isEmpty() ? capped : ordered;
+    }
+
+    private static String tracksToJson(List<Track> list) {
+        org.json.JSONArray a = new org.json.JSONArray();
+        for (Track t : list) {
+            try {
+                org.json.JSONObject o = new org.json.JSONObject();
+                o.put("id", t.deezerId).put("ti", t.title).put("ar", t.artist).put("ai", t.artistId)
+                        .put("c", t.coverUrl == null ? "" : t.coverUrl).put("cb", t.coverBigUrl == null ? "" : t.coverBigUrl)
+                        .put("d", t.durationSec).put("r", t.reason == null ? "" : t.reason).put("y", t.year)
+                        .put("v", t.videoId == null ? "" : t.videoId);
+                if (t.hasBpm()) o.put("b", t.bpm);
+                if (t.hasGain()) o.put("g", t.gain);
+                a.put(o);
+            } catch (Exception ignored) {}
+        }
+        return a.toString();
+    }
+
+    private static List<Track> tracksFromJson(String s) {
+        List<Track> out = new ArrayList<>();
+        try {
+            org.json.JSONArray a = new org.json.JSONArray(s);
+            for (int i = 0; i < a.length(); i++) {
+                org.json.JSONObject o = a.optJSONObject(i);
+                if (o == null) continue;
+                Track t = new Track();
+                t.deezerId = o.optLong("id");
+                t.title = o.optString("ti");
+                t.artist = o.optString("ar");
+                t.artistId = o.optLong("ai");
+                t.coverUrl = o.optString("c").isEmpty() ? null : o.optString("c");
+                t.coverBigUrl = o.optString("cb").isEmpty() ? null : o.optString("cb");
+                t.durationSec = o.optInt("d");
+                t.reason = o.optString("r");
+                t.year = o.optInt("y");
+                t.videoId = o.optString("v").isEmpty() ? null : o.optString("v");
+                if (o.has("b")) { t.bpm = o.optDouble("b"); }
+                if (o.has("g")) { t.gain = o.optDouble("g"); }
+                t.detailsLoaded = o.has("b") || o.has("g");
+                t.lang = Lang.detect(t.title, t.artist);
+                if (!t.title.isEmpty()) out.add(t);
+            }
+        } catch (Exception ignored) {}
+        return out;
+    }
+
+    // ---- 🌦 Havaya göre ----
+
+    public void discoverWeather() {
+        lastDiscover = this::discoverWeather;
+        if (!Weather.hasPlace(app)) {
+            discoverLoading = false;
+            discoverResults = new ArrayList<>();
+            discoverProblem = "Hava durumu için önce Ayarlar → Akıllı bağlam'dan şehrini seç.";
+            notifyChanged();
+            return;
+        }
+        final int gen = ++discoverGeneration;
+        discoverLoading = true;
+        discoverProblem = null;
+        discoverResults = new ArrayList<>();
+        discoverLabel = "🌦 Havaya göre";
+        discoverStage = "Hava durumuna bakılıyor…";
+        notifyChanged();
+        net.submit(() -> {
+            Weather.Now w = Weather.fetchNow(app);
+            main.post(() -> {
+                if (gen != discoverGeneration) return;
+                if (w == null) {
+                    discoverLoading = false;
+                    autoStartDiscover = false;
+                    discoverProblem = "Hava durumu alınamadı. İnternet bağlantını kontrol edip tekrar dene.";
+                    notifyChanged();
+                    return;
+                }
+                String sentence = w.sentence();
+                Vibe.Result r = Vibe.parse(sentence, hourNow());
+                prefs.edit().remove("genre").putString("vibe", sentence).putString("mood", r.moodId)
+                        .putString("place", r.placeId).putLong("sessionTs", System.currentTimeMillis()).apply();
+                boolean turkish = isTurkish();
+                Moods.Target t = r.target(turkish);
+                for (String tg : w.tags()) if (!t.tags.contains(tg)) t.tags.add(tg);
+                t.label = w.label() + "  ·  " + r.summary();
+                log("🌦 " + w.label() + " → " + r.summary());
+                runDiscover(t, turkish, null);
+            });
+        });
+    }
+
+    // ---- 🎧 Kulaklık ----
+
+    public static final int HP_OFF = 0, HP_ASK = 1, HP_AUTO = 2;
+    public int getHpMode() { return prefs.getInt("hpMode", HP_ASK); }
+    public void setHpMode(int m) { prefs.edit().putInt("hpMode", m).apply(); notifyChanged(); }
+
+    /** Şu ana uygun başlangıç: rutin, hava ya da saat. */
+    String contextSentence() {
+        Weather.Now w = Weather.isOn(app) ? Weather.current() : null;
+        if (w != null) return w.sentence();
+        int h = hourNow();
+        return h < 6 ? "gece sakin" : h < 11 ? "sabah keyifli" : h < 17 ? "hareketli keyifli" : h < 22 ? "akşam" : "gece sakin";
+    }
+
+    String contextLabel() {
+        Routines.Routine r = Routines.active(app);
+        if (r != null) return r.label();
+        Weather.Now w = Weather.isOn(app) ? Weather.current() : null;
+        Vibe.Result v = Vibe.parse(contextSentence(), hourNow());
+        return (w != null ? w.label() + " · " : "") + v.summary();
+    }
+
+    /** Şu ana uygun liste (kulaklık takılınca ya da bildirimden). */
+    public void discoverForNow(boolean play) {
+        autoStartDiscover = play;
+        Routines.Routine r = activeRoutine();
+        if (r != null && getVibe() == null) {
+            if ("mood".equals(r.kind)) { discover(r.value, null); return; }
+            if ("genre".equals(r.kind)) { discoverGenre(r.value); return; }
+            discoverText(r.value);
+            return;
+        }
+        discoverText(contextSentence());
+    }
+
+    public void onHeadphonesConnected(String name) {
+        int m = getHpMode();
+        if (m == HP_OFF || playing) return;
+        long now = System.currentTimeMillis();
+        if (now - prefs.getLong("hpLast", 0) < 10 * 60 * 1000) return;
+        prefs.edit().putLong("hpLast", now).apply();
+        log("🎧 " + name + " bağlandı");
+        if (m == HP_AUTO) {
+            discoverForNow(true);
+        } else {
+            notifier.headphonesPrompt(contextLabel());
+        }
+    }
+
+    // ---- 🤝 Blend ----
+
+    public void discoverBlend(Blend.Taste f) {
+        clearSessionQuiet();
+        lastDiscover = () -> discoverBlend(f);
+        String who = f.name == null || f.name.trim().isEmpty() ? "arkadaşın" : f.name.trim();
+        runCustomDiscover("🤝 Blend · Sen + " + who, () -> buildBlend(f, who),
+                "Ortak liste çıkarılamadı. İkinizin de birkaç şarkı beğenmiş olması gerekiyor.");
+    }
+
+    private List<Track> buildBlend(Blend.Taste f, String who) {
+        Blend.Taste me = Blend.mine(this, "");
+        Set<Long> myIds = new HashSet<>();
+        Set<String> myNames = new HashSet<>();
+        for (int i = 0; i < me.artistIds.size(); i++) {
+            myIds.add(me.artistIds.get(i)[0]);
+            myNames.add(Text.norm(me.artistNames.get(i)));
+        }
+        List<Long> common = new ArrayList<>(), theirsOnly = new ArrayList<>();
+        List<String> commonNames = new ArrayList<>();
+        for (int i = 0; i < f.artistIds.size(); i++) {
+            long id = f.artistIds.get(i)[0];
+            String nm = f.artistNames.get(i);
+            if (myIds.contains(id) || myNames.contains(Text.norm(nm))) { common.add(id); commonNames.add(nm); }
+            else theirsOnly.add(id);
+        }
+        List<Long> mineOnly = new ArrayList<>();
+        for (long[] a : me.artistIds) if (!common.contains(a[0])) mineOnly.add(a[0]);
+
+        List<Track> both = new ArrayList<>(), theirs = new ArrayList<>(), mine = new ArrayList<>();
+        stage(discoverGeneration, "Ortak sanatçılarınız aranıyor…");
+        for (int i = 0; i < common.size() && i < 5; i++) {
+            long id = common.get(i);
+            for (Track t : sample(safe(() -> deezer.artistTop(id, 10, "blend")), 3)) {
+                t.reason = "🤝 ikinizin de sevdiği sanatçı";
+                both.add(t);
+            }
+        }
+        stage(discoverGeneration, who + " için beğenileri okunuyor…");
+        for (Long id : sample(f.tracks, 14)) {
+            try {
+                Track t = deezer.track(id, "blend");
+                if (t != null) { t.reason = "💬 " + who + " seviyor"; theirs.add(t); }
+            } catch (Exception ignored) {}
+        }
+        for (Long id : sample(theirsOnly, 4)) {
+            for (Track t : sample(safe(() -> deezer.artistTop(id, 8, "blend")), 2)) {
+                t.reason = "💬 " + who + " dinliyor";
+                theirs.add(t);
+            }
+        }
+        for (Store.Liked l : sample(store.liked(), 10)) {
+            Track t = l.toTrack();
+            t.reason = "❤️ senin beğenin";
+            mine.add(t);
+        }
+        for (Long id : sample(mineOnly, 3)) {
+            for (Track t : sample(safe(() -> deezer.artistTop(id, 8, "blend")), 2)) {
+                t.reason = "🎧 senin sanatçın";
+                mine.add(t);
+            }
+        }
+        // Harmanla: önce ortaklar, sonra sırayla onun-senin
+        List<Track> mixed = new ArrayList<>();
+        Collections.shuffle(both, rnd);
+        Collections.shuffle(theirs, rnd);
+        Collections.shuffle(mine, rnd);
+        for (int i = 0; i < both.size() && i < 4; i++) mixed.add(both.get(i));
+        int ti = 0, mi = 0, bi = Math.min(4, both.size());
+        while (ti < theirs.size() || mi < mine.size() || bi < both.size()) {
+            if (ti < theirs.size()) mixed.add(theirs.get(ti++));
+            if (mi < mine.size()) mixed.add(mine.get(mi++));
+            if (bi < both.size() && mixed.size() % 4 == 0) mixed.add(both.get(bi++));
+            else if (ti >= theirs.size() && mi >= mine.size() && bi < both.size()) mixed.add(both.get(bi++));
+        }
+        List<Track> list = capArtists(dedupe(mixed, "", new HashSet<>(store.dislikedKeys())), 2, 26);
+
+        // Ortak noktalar: etiketler ve sanatçılar
+        List<String> sharedTags = new ArrayList<>();
+        for (String tg : me.tags) if (f.tags.contains(tg) && sharedTags.size() < 3) sharedTags.add(tg);
+        List<String> parts = new ArrayList<>();
+        if (!sharedTags.isEmpty()) parts.add("ortak tarz: " + String.join(", ", sharedTags));
+        if (!commonNames.isEmpty()) parts.add("ortak sanatçı: " + String.join(", ", commonNames.subList(0, Math.min(2, commonNames.size()))));
+        pendingLabel = "🤝 Sen + " + who + (parts.isEmpty() ? "" : "  ·  " + String.join("  ·  ", parts));
+        return list;
+    }
+
+    // ---- ▶ YouTube Music'e aktar ----
+
+    private final List<String> externalTitles = new ArrayList<>();
+    private long externalStarted;
+
+    private int externalIndex(String title) {
+        for (int i = 0; i < externalTitles.size(); i++) if (titlesMatch(title, externalTitles.get(i))) return i;
+        return -1;
+    }
+
+    /** YouTube Music'te aktarılan liste çalarken (son şarkı hariç) araya girme. */
+    private boolean externalHolds() {
+        if (externalTitles.isEmpty() || nowTitle == null) return false;
+        int i = externalIndex(nowTitle);
+        return i >= 0 && i < externalTitles.size() - 1;
+    }
+
+    public boolean exporting;
+
+    /**
+     * Listeyi YouTube Music'te sıralı bir liste olarak açar. Olmazsa listeyi Ahenk sırasıyla çalar.
+     * done: ana iş parçacığında, kullanıcıya gösterilecek kısa mesajla.
+     */
+    public void exportToYtMusic(List<Track> list, java.util.function.Consumer<String> done) {
+        if (list == null || list.isEmpty() || exporting) return;
+        exporting = true;
+        notifyChanged();
+        final List<Track> l = new ArrayList<>(list.subList(0, Math.min(30, list.size())));
+        net.submit(() -> {
+            List<String> ids = new ArrayList<>();
+            List<Track> found = new ArrayList<>();
+            for (Track t : l) {
+                if (t.videoId == null) t.videoId = YtMusic.findVideoId(t.artist, t.title);
+                if (t.videoId != null) { ids.add(t.videoId); found.add(t); }
+            }
+            String listId = ids.size() >= 2 ? YtMusic.tempPlaylist(ids) : null;
+            main.post(() -> {
+                exporting = false;
+                if (listId != null) {
+                    try {
+                        Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(
+                                "https://music.youtube.com/watch?v=" + ids.get(0) + "&list=" + listId));
+                        i.setPackage(YTM);
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        app.startActivity(i);
+                        externalTitles.clear();
+                        for (Track t : found) externalTitles.add(t.title);
+                        externalStarted = SystemClock.elapsedRealtime();
+                        lastExportLink = YtMusic.shareLink(ids);
+                        log("▶ " + found.size() + " şarkı YouTube Music'e liste olarak aktarıldı");
+                        if (done != null) done.accept("YouTube Music'te " + found.size()
+                                + " şarkılık liste açıldı. Kalıcı kaydetmek için orada ⋮ → Çalma listesine kaydet.");
+                        notifyChanged();
+                        return;
+                    } catch (Exception ex) {
+                        log("YouTube Music listesi açılamadı: " + ex.getMessage());
+                    }
+                }
+                if (!ids.isEmpty()) lastExportLink = YtMusic.shareLink(ids);
+                if (!found.isEmpty()) playNow(found.get(0), found);
+                if (done != null) done.accept("YouTube liste oluşturmadı; şarkılar Ahenk sırasıyla çalınıyor.");
+                notifyChanged();
+            });
+        });
+    }
+
+    /** Son aktarılan listenin tarayıcıda da açılan bağlantısı (paylaşmak için). */
+    public volatile String lastExportLink;
 
     // =====================================================================
     // Arama: şarkı ya da sanatçıdan başlat

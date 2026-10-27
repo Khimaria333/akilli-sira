@@ -26,16 +26,60 @@ import java.util.function.IntConsumer;
 public final class Ui {
     private Ui() {}
 
-    // ---- Renkler ----
-    public static final int BG = 0xFF0B0B10;
-    public static final int SURFACE = 0xFF15151D;
-    public static final int SURFACE2 = 0xFF1F1F2A;
+    // ---- Renkler (tema seçimine göre applyTheme değiştirir) ----
+    public static int BG = 0xFF0B0B10;
+    public static int SURFACE = 0xFF15151D;
+    public static int SURFACE2 = 0xFF1F1F2A;
     public static final int STROKE = 0x22FFFFFF;
     public static final int TEXT = 0xFFF4F4F8;
     public static final int TEXT2 = 0xFFA3A3B5;
     public static final int TEXT3 = 0xFF6E6E82;
-    public static final int ACCENT = 0xFFFF4D6D;
-    public static final int ACCENT2 = 0xFF7B5CFF;
+    public static int ACCENT = 0xFFFF4D6D;
+    public static int ACCENT2 = 0xFF7B5CFF;
+
+    // ---- Tema ----
+    public static final String[] BASES = {"Koyu", "AMOLED siyah"};
+    public static final String[] ACCENT_NAMES = {"Ahenk", "Okyanus", "Gün batımı", "Orman", "Kapak rengi"};
+    public static final int[][] ACCENTS = {
+        {0xFFFF4D6D, 0xFF7B5CFF}, {0xFF22C1EE, 0xFF3B5BFF}, {0xFFFF8A3D, 0xFFFF3D7F}, {0xFF2FCB8A, 0xFF138A8A}};
+    public static final int ACCENT_COVER = 4;
+
+    public static int themeBase(Context c) {
+        return c.getSharedPreferences("ayarlar", Context.MODE_PRIVATE).getInt("themeBase", 0);
+    }
+
+    public static int themeAccent(Context c) {
+        return c.getSharedPreferences("ayarlar", Context.MODE_PRIVATE).getInt("themeAccent", 0);
+    }
+
+    public static void setTheme(Context c, int base, int accent) {
+        c.getSharedPreferences("ayarlar", Context.MODE_PRIVATE).edit()
+                .putInt("themeBase", base).putInt("themeAccent", accent).apply();
+    }
+
+    /**
+     * Seçili temayı renklere uygular. coverColor: çalan şarkının kapak rengi (0 = yok),
+     * sadece "Kapak rengi" seçiliyken kullanılır. Uygulanan temanın imzasını döndürür.
+     */
+    public static int applyTheme(Context c, int coverColor) {
+        int base = themeBase(c), acc = themeAccent(c);
+        if (base == 1) { BG = 0xFF000000; SURFACE = 0xFF0C0C10; SURFACE2 = 0xFF17171E; }
+        else { BG = 0xFF0B0B10; SURFACE = 0xFF15151D; SURFACE2 = 0xFF1F1F2A; }
+        if (acc == ACCENT_COVER && coverColor != 0) {
+            float[] hsv = new float[3];
+            android.graphics.Color.colorToHSV(coverColor, hsv);
+            hsv[1] = Math.max(0.55f, Math.min(0.9f, hsv[1]));
+            hsv[2] = Math.max(0.88f, hsv[2]);
+            ACCENT = android.graphics.Color.HSVToColor(hsv);
+            hsv[0] = (hsv[0] + 38) % 360;
+            ACCENT2 = android.graphics.Color.HSVToColor(hsv);
+        } else {
+            int[] p = ACCENTS[acc >= 0 && acc < ACCENTS.length ? acc : 0];
+            ACCENT = p[0];
+            ACCENT2 = p[1];
+        }
+        return base * 31 + ACCENT * 17 + ACCENT2;
+    }
     public static final int GOOD = 0xFF3DDC97;
     public static final int WARN = 0xFFFFB347;
 

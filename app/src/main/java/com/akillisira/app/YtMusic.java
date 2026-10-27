@@ -97,4 +97,43 @@ public final class YtMusic {
             c.disconnect();
         }
     }
+
+    /**
+     * YouTube'un "watch_videos" özelliğiyle geçici bir liste oluşturur (en fazla 50 şarkı).
+     * YouTube Music bu listeyi sıralı çalar; oradan kalıcı bir listeye kaydedilebilir. Olmazsa null.
+     */
+    public static String tempPlaylist(java.util.List<String> ids) {
+        if (ids == null || ids.isEmpty()) return null;
+        String url = "https://www.youtube.com/watch_videos?video_ids="
+                + String.join(",", ids.subList(0, Math.min(50, ids.size())));
+        for (int hop = 0; hop < 4 && url != null; hop++) {
+            HttpURLConnection h = null;
+            try {
+                h = (HttpURLConnection) new URL(url).openConnection();
+                h.setInstanceFollowRedirects(false);
+                h.setConnectTimeout(8000);
+                h.setReadTimeout(8000);
+                h.setRequestProperty("User-Agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36");
+                h.setRequestProperty("Accept-Language", "tr-TR,tr;q=0.9,en;q=0.8");
+                h.getResponseCode();
+                String loc = h.getHeaderField("Location");
+                if (loc == null) return null;
+                Matcher m = Pattern.compile("[?&]list=([A-Za-z0-9_-]{10,})").matcher(loc);
+                if (m.find()) return m.group(1);
+                if (!loc.contains("youtube.com")) return null;   // çerez onayı vb.
+                url = loc.startsWith("http") ? loc : "https://www.youtube.com" + loc;
+            } catch (Exception e) {
+                return null;
+            } finally {
+                if (h != null) h.disconnect();
+            }
+        }
+        return null;
+    }
+
+    /** Tarayıcıda da açılan paylaşılabilir bağlantı. */
+    public static String shareLink(java.util.List<String> ids) {
+        return "https://www.youtube.com/watch_videos?video_ids=" + String.join(",", ids.subList(0, Math.min(50, ids.size())));
+    }
 }

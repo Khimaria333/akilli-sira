@@ -29,7 +29,7 @@ public class NowPage extends Page {
     private android.animation.ValueAnimator bgAnim;
     private String colorFor;
     private Views.Meter meter;
-    private TextView sessionLabel, sleepChip, nightPill, carPill;
+    private TextView sessionLabel, sleepChip, nightPill, carPill, runChip, sessionClose;
 
     private ImageView nextCover;
     private TextView nextBadge, nextTitle, nextArtist, nextReason, nextCountdown, nextStatus;
@@ -227,6 +227,13 @@ public class NowPage extends Page {
         sleepChip.setTextSize(13);
         sleepChip.setOnClickListener(v -> sleepDialog());
         contextRow.addView(sleepChip, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 0, 8, 0));
+        runChip = Ui.chip(a, "🏃  Koşu modu", false);
+        runChip.setTextSize(13);
+        runChip.setOnClickListener(v -> {
+            if (e.isRunActive()) e.stopRun();
+            else a.startRunMode(null);
+        });
+        contextRow.addView(runChip, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 0, 8, 0));
         nightPill = Ui.pill(a, "🌙 Gece: sakin", Ui.ACCENT2);
         contextRow.addView(nightPill, Ui.margins(Ui.lp(Ui.WRAP, Ui.WRAP), a, 0, 0, 8, 0));
         carPill = Ui.pill(a, "🚗 Arabada", Ui.GOOD);
@@ -240,10 +247,16 @@ public class NowPage extends Page {
         sessionLabel = Ui.oneLine(Ui.text(a, "", 14, Ui.TEXT, Ui.MEDIUM));
         sessionCard.addView(sessionLabel, Ui.lpw(1));
         TextView close = Ui.text(a, "Kapat", 13, Ui.TEXT2, Ui.BOLD);
+        sessionClose = close;
         close.setPadding(Ui.dp(a, 12), Ui.dp(a, 6), Ui.dp(a, 12), Ui.dp(a, 6));
         close.setBackground(Ui.ripple(a, Ui.round(a, 0x22FFFFFF, 14), 14));
         close.setOnClickListener(v -> {
-            if (e.activeRoutine() != null) {
+            if (e.isRunActive()) {
+                e.stopRun();
+            } else if (e.weatherOnly()) {
+                a.toast("Hava etkisini Ayarlar → Akıllı bağlam'dan kapatabilirsin");
+                a.showTab(MainActivity.TAB_SETTINGS);
+            } else if (e.activeRoutine() != null) {
                 a.toast("Bu bir rutin; Ayarlar → Otomatik ruh hali planı'ndan kapatabilirsin");
                 a.showTab(MainActivity.TAB_SETTINGS);
             } else {
@@ -455,7 +468,16 @@ public class NowPage extends Page {
 
         Moods.Target tg = e.sessionTarget();
         sessionCard.setVisibility(has && tg != null ? View.VISIBLE : View.GONE);
-        if (tg != null) sessionLabel.setText("🎯  " + tg.label);
+        if (tg != null) sessionLabel.setText((e.isRunActive() || e.weatherOnly() ? "" : "🎯  ") + tg.label);
+        String closeTxt = e.isRunActive() ? "Bitir" : e.weatherOnly() ? "Ayar" : "Kapat";
+        if (!closeTxt.contentEquals(sessionClose.getText())) sessionClose.setText(closeTxt);
+        boolean run = e.isRunActive();
+        String runTxt = !run ? "🏃  Koşu modu"
+                : e.getCadence() > 0 ? "🏃  " + e.getCadence() + " adım/dk · " + e.runBpm() + " BPM" : "🏃  Adım bekleniyor…";
+        if (!runTxt.contentEquals(runChip.getText())) {
+            runChip.setText(runTxt);
+            Ui.setChip(a, runChip, run);
+        }
 
         // bağlam satırı
         long sl = e.sleepRemainingMs();

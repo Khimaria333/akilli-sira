@@ -25,6 +25,8 @@ public class MainActivity extends Activity implements Engine.Listener {
     public static final int TAB_DISCOVER = 0, TAB_NOW = 1, TAB_HISTORY = 2, TAB_SETTINGS = 3;
     private static final int TABS = 4;
     private static final int REQ_NOTIF = 43;
+    private static final int REQ_ACT = 46, REQ_LOC = 47;
+    private Runnable afterPermission;
     private static final int REQ_EXPORT = 44, REQ_IMPORT = 45;
     private static final int REQ_SPEECH = 42;
 
@@ -46,13 +48,16 @@ public class MainActivity extends Activity implements Engine.Listener {
         super.onCreate(savedInstanceState);
         installCrashLog();
         WakeScheduler.schedule(this);   // alarm açıksa bir sonrakini garanti et
+        NewReleases.schedule(this);     // yeni çıkanlar: günlük kontrol
         engine = Engine.get(this);
         String crash = getSharedPreferences("ayarlar", MODE_PRIVATE).getString("lastCrash", null);
         if (crash != null) {
             engine.log("⚠️ Son çökme: " + crash);
             getSharedPreferences("ayarlar", MODE_PRIVATE).edit().remove("lastCrash").apply();
         }
+        themeSig = Ui.applyTheme(this, coverColor());
         Window w = getWindow();
+        w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Ui.BG));
         w.setStatusBarColor(Ui.BG);
         w.setNavigationBarColor(Ui.SURFACE);
 
@@ -74,6 +79,20 @@ public class MainActivity extends Activity implements Engine.Listener {
     }
 
     private Intent pendingIntent;
+    private int themeSig;
+
+    /** "Kapak rengi" teması için çalan şarkının baskın rengi (yoksa 0). */
+    private int coverColor() {
+        if (Ui.themeAccent(this) != Ui.ACCENT_COVER || engine == null) return 0;
+        android.graphics.Bitmap b = engine.nowArt();
+        if (b == null && engine.seed != null) b = ImageLoader.cached(engine.seed.coverUrl);
+        return b != null ? Palette.vibrant(b, 0) : 0;
+    }
+
+    /** Tema değişince ekranı yeni renklerle yeniden kur. */
+    public void applyThemeNow() {
+        recreate();
+    }
 
     /** Ana ekrandan açıldı mı (kısayol, bildirim, alarm değil): açılış animasyonu sadece o zaman. */
     private static boolean isLauncherIntent(Intent i) {
@@ -123,6 +142,11 @@ public class MainActivity extends Activity implements Engine.Listener {
     private void handleShortcut() {
         Intent i = pendingIntent;
         pendingIntent = null;
+        if (i != null && i.getBooleanExtra(NewReleases.EXTRA_OPEN, false)) {
+            engine.discoverNew();
+            showTab(TAB_DISCOVER);
+            return;
+        }
         if (i == null || i.getData() == null || !"akillisira".equals(i.getData().getScheme())) return;
         String what = i.getData().getLastPathSegment();
         if (what == null) return;
@@ -131,6 +155,7 @@ public class MainActivity extends Activity implements Engine.Listener {
             case "enerjik": engine.discoverAndPlay("enerjik", null); break;
             case "yol": engine.discoverAndPlay("mutlu", "araba"); break;
             case "favoriler": engine.favoritesAndPlay(); break;
+            case "gunun": engine.dailyAndPlay(); break;
             default: return;
         }
         toast("Liste hazırlanıyor, birazdan başlıyor…");
@@ -140,6 +165,15 @@ public class MainActivity extends Activity implements Engine.Listener {
     @Override
     protected void onResume() {
         super.onResume();
+        // Kapak rengi teması: şarkı değiştiyse renkleri tazele
+        if (Ui.themeAccent(this) == Ui.ACCENT_COVER) {
+            int c = coverColor();
+            if (c != 0) {
+                int saved = themeSig;
+                int now = Ui.applyTheme(this, c);
+                if (now != saved) { recreate(); return; }
+            }
+        }
         engine.addListener(this);
         engine.setUiVisible(true);
         route();
@@ -347,9 +381,45 @@ public class MainActivity extends Activity implements Engine.Listener {
         }
     }
 
+    /** Koşu modu: adım sensörü ve "fiziksel aktivite" izni. */
+    public void startRunMode(Runnable then) {
+        if (!RunService.hasSensor(this)) {
+            toast("Bu telefonda adım sensörü yok, koşu modu çalışamıyor");
+            return;
+        }
+        withPermission(android.Manifest.permission.ACTIVITY_RECOGNITION, REQ_ACT, () -> {
+            engine.discoverRun();
+            toast("🏃 Koşu modu açık: koşmaya başla, tempo birkaç saniyede ölçülür");
+            if (then != null) then.run();
+        });
+    }
+
+    public void withLocationPermission(Runnable r) {
+        withPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION, REQ_LOC, r);
+    }
+
+    private void withPermission(String perm, int req, Runnable r) {
+        if (checkSelfPermission(perm) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            r.run();
+            return;
+        }
+        afterPermission = r;
+        requestPermissions(new String[]{perm}, req);
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_ACT || requestCode == REQ_LOC) {
+            Runnable r = afterPermission;
+            afterPermission = null;
+            boolean ok = grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            if (ok && r != null) r.run();
+            else if (!ok) toast(requestCode == REQ_ACT
+                    ? "Koşu modu adım sayımı için \"Fiziksel aktivite\" iznine ihtiyaç duyar"
+                    : "Konum izni verilmedi; şehrini arayarak seçebilirsin");
+            return;
+        }
         if (requestCode == REQ_NOTIF) {
             if (current != null) current.render();
             engine.refreshNotification();

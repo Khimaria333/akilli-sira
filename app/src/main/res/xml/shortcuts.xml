@@ -27,12 +27,12 @@
     <shortcut
         android:enabled="true"
         android:icon="@mipmap/ic_launcher"
-        android:shortcutId="yol"
-        android:shortcutLongLabel="@string/sc_yol_long"
-        android:shortcutShortLabel="@string/sc_yol">
+        android:shortcutId="gunun"
+        android:shortcutLongLabel="@string/sc_gunun_long"
+        android:shortcutShortLabel="@string/sc_gunun">
         <intent
             android:action="android.intent.action.VIEW"
-            android:data="akillisira://start/yol"
+            android:data="akillisira://start/gunun"
             android:targetClass="com.akillisira.app.MainActivity"
             android:targetPackage="com.akillisira.app" />
     </shortcut>

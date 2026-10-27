@@ -36,7 +36,7 @@ public class DiscoverPage extends Page {
     private static final int TAB_TELL = 0, TAB_MOOD = 1, TAB_GENRE = 2, TAB_SEARCH = 3;
 
     private SharedPreferences sp;
-    private TextView greeting, profileSub;
+    private TextView greeting, profileSub, weatherSub, runSub, runTitle;
     private Ui.Segmented tabs;
     private final LinearLayout[] panels = new LinearLayout[4];
     private int tab;
@@ -94,20 +94,43 @@ public class DiscoverPage extends Page {
         h.setPadding(0, Ui.dp(a, 4), 0, 0);
         body.addView(h);
 
-        // ---- Hızlı başlat ----
+        // ---- Hızlı başlat (yana kaydırılır) ----
         LinearLayout quick = Ui.hbox(a);
+        LinearLayout daily = quickCard("☀️", "Günün karışımı", "her gün yeni, sana özel", 0xFFFFB347, 0xFFFF5E62);
+        daily.setOnClickListener(v -> { e.discoverDaily(); scrollToResults(); });
         LinearLayout fav = quickCard("❤️", "Favorilerim", "beğendiklerinden karışık", 0xFFFF4D6D, 0xFFB24592);
         fav.setOnClickListener(v -> { e.discoverFavorites(); scrollToResults(); });
         LinearLayout prof = quickCard("🧭", "Tarzıma göre", "", 0xFF7B5CFF, 0xFF4FACFE);
         profileSub = (TextView) prof.getChildAt(2);
         prof.setOnClickListener(v -> { e.discoverProfile(); scrollToResults(); });
-        LinearLayout.LayoutParams l1 = Ui.lpw(1);
-        l1.setMargins(0, 0, Ui.dp(a, 5), 0);
-        LinearLayout.LayoutParams l2 = Ui.lpw(1);
-        l2.setMargins(Ui.dp(a, 5), 0, 0, 0);
-        quick.addView(fav, l1);
-        quick.addView(prof, l2);
-        body.addView(quick, Ui.margins(full(), a, 0, 20, 0, 0));
+        LinearLayout fresh = quickCard("🆕", "Yeni çıkanlar", "sevdiğin sanatçılardan", 0xFF11998E, 0xFF38EF7D);
+        fresh.setOnClickListener(v -> { e.discoverNew(); scrollToResults(); });
+        LinearLayout weather = quickCard("🌦", "Havaya göre", "", 0xFF4FACFE, 0xFF00C6FB);
+        weatherSub = (TextView) weather.getChildAt(2);
+        weather.setOnClickListener(v -> {
+            if (!Weather.hasPlace(a)) {
+                WeatherDialog.show(a, () -> { e.discoverWeather(); scrollToResults(); });
+            } else {
+                e.discoverWeather();
+                scrollToResults();
+            }
+        });
+        LinearLayout run = quickCard("🏃", "Koşu modu", "", 0xFFF7971E, 0xFFE53935);
+        runTitle = (TextView) run.getChildAt(1);
+        runSub = (TextView) run.getChildAt(2);
+        run.setOnClickListener(v -> {
+            if (e.isRunActive()) e.stopRun();
+            else a.startRunMode(() -> scrollToResults());
+        });
+        LinearLayout blend = quickCard("🤝", "Blend", "arkadaşınla ortak liste", 0xFF8E2DE2, 0xFFDA4453);
+        blend.setOnClickListener(v -> BlendDialog.show(a, e, this::scrollToResults));
+        LinearLayout[] cards = {daily, fav, prof, fresh, weather, run, blend};
+        for (int i = 0; i < cards.length; i++) {
+            quick.addView(cards[i], Ui.margins(Ui.lp(Ui.dp(a, 148), Ui.WRAP), a, i == 0 ? 0 : 10, 0, 0, 0));
+        }
+        android.widget.HorizontalScrollView qs = Ui.hscroll(a, quick);
+        qs.setClipToPadding(false);
+        body.addView(qs, Ui.margins(full(), a, 0, 20, 0, 0));
 
         // ---- Sekmeler ----
         tabs = Ui.segmented(a, new String[]{"✍️ Anlat", "🎭 Ruh hali", "🎵 Tür", "🔎 Ara"}, tab, this::showPanel);
@@ -515,6 +538,7 @@ public class DiscoverPage extends Page {
 
     @Override
     public void render() {
+        renderQuick();
         renderProfileCard();
         renderSearch();
         renderGenreHint();
@@ -532,6 +556,20 @@ public class DiscoverPage extends Page {
             sub = String.join(" · ", top);
         }
         if (!sub.contentEquals(profileSub.getText())) profileSub.setText(sub);
+    }
+
+    private void renderQuick() {
+        Weather.Now w = Weather.current();
+        String ws = !Weather.hasPlace(a) ? "dokun, şehrini seç" : w != null ? w.label() : Weather.placeName(a);
+        if (ws == null) ws = "";
+        if (!ws.contentEquals(weatherSub.getText())) weatherSub.setText(ws);
+        if (Weather.hasPlace(a) && w == null) Weather.refresh(a, false, () -> a.runOnUiThread(this::renderQuick));
+        boolean on = e.isRunActive();
+        String rt = on ? "Koşuyu bitir" : "Koşu modu";
+        String rs = on ? (e.getCadence() > 0 ? e.getCadence() + " adım/dk · " + e.runBpm() + " BPM" : "adım bekleniyor…")
+                : "adım tempona göre BPM";
+        if (!rt.contentEquals(runTitle.getText())) runTitle.setText(rt);
+        if (!rs.contentEquals(runSub.getText())) runSub.setText(rs);
     }
 
     private void renderGenreHint() {
@@ -622,7 +660,18 @@ public class DiscoverPage extends Page {
         share.setBackground(Ui.ripple(a, Ui.stroke(a, Ui.SURFACE2, Ui.STROKE, 26, 1), 26));
         share.setOnClickListener(v -> ShareCard.shareList(a, e.discoverLabel, list));
         btns.addView(share, Ui.margins(Ui.lp(Ui.dp(a, 52), Ui.dp(a, 52)), a, 10, 0, 0, 0));
-        results.addView(btns, Ui.margins(full(), a, 0, 0, 0, 12));
+        results.addView(btns, Ui.margins(full(), a, 0, 0, 0, 10));
+        TextView exp = Ui.secondaryButton(a, "▶  YouTube Music'te liste olarak aç");
+        exp.setGravity(Gravity.CENTER);
+        exp.setOnClickListener(v -> {
+            if (e.exporting) return;
+            exp.setText("YouTube Music'e aktarılıyor…");
+            e.exportToYtMusic(list, msg -> {
+                exp.setText("▶  YouTube Music'te liste olarak aç");
+                a.toast(msg);
+            });
+        });
+        results.addView(exp, Ui.margins(full(), a, 0, 0, 0, 12));
 
         int i = 1;
         for (Track t : list) {

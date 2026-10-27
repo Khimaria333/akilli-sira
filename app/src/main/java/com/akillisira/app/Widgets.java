@@ -264,7 +264,7 @@ final class Widgets {
         }
         rv.setOnClickPendingIntent(R.id.w_chip_sakin, start("sakin"));
         rv.setOnClickPendingIntent(R.id.w_chip_enerjik, start("enerjik"));
-        rv.setOnClickPendingIntent(R.id.w_chip_yol, start("yol"));
+        rv.setOnClickPendingIntent(R.id.w_chip_gunun, start("gunun"));
         rv.setOnClickPendingIntent(R.id.w_chip_fav, start("favoriler"));
         if (size == LARGE) return rv;
 

@@ -365,4 +365,77 @@ public final class Views {
             }
         }
     }
+
+    /**
+     * Dinleme haritası: 7 gün (Pzt–Paz) × 12 iki saatlik dilim. Koyu = hiç, parlak = çok.
+     */
+    public static final class HeatMap extends View {
+        private final Paint cell = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint txt = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private int[][] data = new int[7][12];
+        private int max = 1;
+        static final String[] DAYS = {"Pt", "Sa", "Ça", "Pe", "Cu", "Ct", "Pz"};
+
+        public HeatMap(Context c) {
+            super(c);
+            txt.setColor(Ui.TEXT3);
+            txt.setTypeface(Ui.MEDIUM);
+        }
+
+        public void setData(int[][] d) {
+            data = d;
+            max = 1;
+            for (int[] r : d) for (int v : r) max = Math.max(max, v);
+            invalidate();
+        }
+
+        /** Son 'days' günün çalmalarından harita. */
+        public static int[][] compute(java.util.List<Store.Play> plays, int days) {
+            int[][] d = new int[7][12];
+            long since = System.currentTimeMillis() - days * 86400000L;
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            for (Store.Play p : plays) {
+                if (p.ts < since) continue;
+                cal.setTimeInMillis(p.ts);
+                int dow = (cal.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7;   // Pzt = 0
+                d[dow][cal.get(java.util.Calendar.HOUR_OF_DAY) / 2]++;
+            }
+            return d;
+        }
+
+        /** "Cuma 20–22" gibi en yoğun dilim (yoksa null). */
+        public static String peak(int[][] d) {
+            int bd = -1, bh = -1, bv = 0;
+            for (int i = 0; i < 7; i++) for (int j = 0; j < 12; j++) if (d[i][j] > bv) { bv = d[i][j]; bd = i; bh = j; }
+            if (bd < 0) return null;
+            String[] full = {"Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"};
+            return full[bd] + " " + String.format(java.util.Locale.ROOT, "%02d–%02d", bh * 2, (bh * 2 + 2) % 24);
+        }
+
+        @Override
+        protected void onDraw(Canvas cv) {
+            float dd = getResources().getDisplayMetrics().density;
+            float left = 26 * dd, top = 16 * dd, gap = 3 * dd;
+            float cw = (getWidth() - left - gap * 11) / 12f;
+            float ch = (getHeight() - top - gap * 6) / 7f;
+            txt.setTextSize(10.5f * dd);
+            for (int j = 0; j < 12; j += 3) {
+                cv.drawText(String.format(java.util.Locale.ROOT, "%02d", j * 2), left + j * (cw + gap), 11 * dd, txt);
+            }
+            for (int i = 0; i < 7; i++) {
+                float y = top + i * (ch + gap);
+                cv.drawText(DAYS[i], 0, y + ch * 0.72f, txt);
+                for (int j = 0; j < 12; j++) {
+                    float x = left + j * (cw + gap);
+                    int v = data[i][j];
+                    if (v == 0) cell.setColor(Ui.SURFACE2);
+                    else {
+                        float f = (float) Math.sqrt(v / (double) max);
+                        cell.setColor(Palette.mix(Palette.mix(Ui.SURFACE2, Ui.ACCENT2, 0.35f), Ui.ACCENT, f));
+                    }
+                    cv.drawRoundRect(x, y, x + cw, y + ch, 4 * dd, 4 * dd, cell);
+                }
+            }
+        }
+    }
 }

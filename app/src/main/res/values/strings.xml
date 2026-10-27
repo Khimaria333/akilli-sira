@@ -10,4 +10,6 @@
     <string name="sc_yol_long">🚗 Yol şarkılarını başlat</string>
     <string name="sc_fav">❤️ Favoriler</string>
     <string name="sc_fav_long">❤️ Favorilerimden karışık</string>
+    <string name="sc_gunun">☀️ Günün karışımı</string>
+    <string name="sc_gunun_long">☀️ Günün karışımını başlat</string>
 </resources>

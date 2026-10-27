@@ -92,9 +92,9 @@
         android:layout_weight="1" android:background="@drawable/widget_chip" android:gravity="center"
         android:singleLine="true" android:text="😌 Sakin" android:textColor="#F4F4F8" android:textSize="11.5sp" /><TextView android:id="@+id/w_chip_enerjik" android:layout_width="0dp" android:layout_height="28dp"
         android:layout_weight="1" android:layout_marginStart="6dp" android:background="@drawable/widget_chip" android:gravity="center"
-        android:singleLine="true" android:text="⚡ Enerjik" android:textColor="#F4F4F8" android:textSize="11.5sp" /><TextView android:id="@+id/w_chip_yol" android:layout_width="0dp" android:layout_height="28dp"
+        android:singleLine="true" android:text="⚡ Enerjik" android:textColor="#F4F4F8" android:textSize="11.5sp" /><TextView android:id="@+id/w_chip_gunun" android:layout_width="0dp" android:layout_height="28dp"
         android:layout_weight="1" android:layout_marginStart="6dp" android:background="@drawable/widget_chip" android:gravity="center"
-        android:singleLine="true" android:text="🚗 Yol" android:textColor="#F4F4F8" android:textSize="11.5sp" /><TextView android:id="@+id/w_chip_fav" android:layout_width="0dp" android:layout_height="28dp"
+        android:singleLine="true" android:text="☀️ Günün" android:textColor="#F4F4F8" android:textSize="11.5sp" /><TextView android:id="@+id/w_chip_fav" android:layout_width="0dp" android:layout_height="28dp"
         android:layout_weight="1" android:layout_marginStart="6dp" android:background="@drawable/widget_chip" android:gravity="center"
         android:singleLine="true" android:text="❤️ Favori" android:textColor="#F4F4F8" android:textSize="11.5sp" />
 </LinearLayout>

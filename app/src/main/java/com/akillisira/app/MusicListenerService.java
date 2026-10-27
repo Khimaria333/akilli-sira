@@ -28,23 +28,34 @@ public class MusicListenerService extends NotificationListenerService {
     private boolean polling;
     private AudioManager audio;
     private final java.util.Set<Integer> carDevices = new java.util.HashSet<>();
+    private final java.util.Set<Integer> hpDevices = new java.util.HashSet<>();
+    private long devicesRegisteredAt;
 
     /** Bluetooth ses cihazı bağlanınca adına bakıp arabaysa "Arabada" moduna geçer. */
     private final AudioDeviceCallback deviceCallback = new AudioDeviceCallback() {
         @Override
         public void onAudioDevicesAdded(AudioDeviceInfo[] added) {
+            // Kayıt anında mevcut cihazlar da bildirilir: onları "yeni takıldı" sayma
+            boolean initial = android.os.SystemClock.elapsedRealtime() - devicesRegisteredAt < 4000;
             for (AudioDeviceInfo d : added) {
-                if (!d.isSink() || d.getType() != AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) continue;
+                if (!d.isSink()) continue;
                 String name = String.valueOf(d.getProductName());
-                if (Car.looksLikeCar(name) && carDevices.add(d.getId()) && engine != null) {
-                    engine.onCarConnected(name);
+                int type = d.getType();
+                boolean bt = type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP;
+                if (bt && Car.looksLikeCar(name)) {
+                    if (carDevices.add(d.getId()) && engine != null) engine.onCarConnected(name);
+                    continue;
                 }
+                boolean hp = bt || type == AudioDeviceInfo.TYPE_WIRED_HEADSET || type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                        || type == AudioDeviceInfo.TYPE_USB_HEADSET || type == 26 /* TYPE_BLE_HEADSET */;
+                if (hp && hpDevices.add(d.getId()) && !initial && engine != null) engine.onHeadphonesConnected(name);
             }
         }
 
         @Override
         public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) {
             for (AudioDeviceInfo d : removed) {
+                hpDevices.remove(d.getId());
                 if (carDevices.remove(d.getId()) && carDevices.isEmpty() && engine != null) {
                     engine.onCarDisconnected();
                 }
@@ -112,6 +123,7 @@ public class MusicListenerService extends NotificationListenerService {
             engine.log("Bildirim erişimi yok: " + e.getMessage());
         }
         audio = getSystemService(AudioManager.class);
+        devicesRegisteredAt = android.os.SystemClock.elapsedRealtime();
         if (audio != null) audio.registerAudioDeviceCallback(deviceCallback, handler);
     }
 

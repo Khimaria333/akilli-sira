@@ -32,6 +32,11 @@ public class ActionReceiver extends BroadcastReceiver {
                 case "enerjik": e.discoverAndPlay("enerjik", null); break;
                 case "yol": e.discoverAndPlay("mutlu", "araba"); break;
                 case "favoriler": e.favoritesAndPlay(); break;
+                case "gunun": e.dailyAndPlay(); break;
+                case "simdi":
+                    e.notifier.cancelHeadphonesPrompt();
+                    e.discoverForNow(true);
+                    break;
                 default: return;
             }
             android.widget.Toast.makeText(context, "Ahenk: liste hazırlanıyor, birazdan başlıyor…",

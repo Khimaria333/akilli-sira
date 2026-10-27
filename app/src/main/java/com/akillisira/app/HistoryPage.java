@@ -92,6 +92,88 @@ public class HistoryPage extends Page {
             content.addView(share, Ui.margins(full(), a, 0, 14, 0, 0));
         }
 
+        // ---- Dinleme haritası (son 4 hafta) ----
+        int[][] heat = Views.HeatMap.compute(plays, 28);
+        String peak = Views.HeatMap.peak(heat);
+        if (peak != null) {
+            content.addView(Ui.section(a, "Ne zaman dinliyorsun"));
+            LinearLayout hc = Ui.card(a);
+            Views.HeatMap hm = new Views.HeatMap(a);
+            hm.setData(heat);
+            hc.addView(hm, Ui.lp(Ui.MATCH, Ui.dp(a, 170)));
+            TextView pk = Ui.text(a, "Son 4 haftada en yoğun: " + peak, 12.5f, Ui.TEXT2, Ui.MEDIUM);
+            pk.setPadding(0, Ui.dp(a, 10), 0, 0);
+            hc.addView(pk);
+            content.addView(hc, full());
+        }
+
+        // ---- Haftalık enerji ----
+        double[] energy = new double[7];
+        int[] eN = new int[7];
+        for (Store.Play p : plays) {
+            if (p.ts < todayStart - 6L * 86400000L || p.energy < 0) continue;
+            int d = (int) ((startOfDay(p.ts) - (todayStart - 6L * 86400000L)) / 86400000L);
+            if (d < 0 || d > 6) continue;
+            energy[d] += p.energy;
+            eN[d]++;
+        }
+        int daysWith = 0;
+        for (int i = 0; i < 7; i++) {
+            if (eN[i] > 0) { energy[i] /= eN[i]; daysWith++; }
+        }
+        if (daysWith >= 2) {
+            // boş günleri komşularla doldur ki çizgi kopmasın
+            for (int i = 0; i < 7; i++) if (eN[i] == 0) energy[i] = i > 0 ? energy[i - 1] : 0.5;
+            content.addView(Ui.section(a, "Bu haftaki enerjin"));
+            LinearLayout ec = Ui.card(a);
+            Views.Curve cv = new Views.Curve(a);
+            cv.setValues(energy);
+            ec.addView(cv, Ui.lp(Ui.MATCH, Ui.dp(a, 90)));
+            LinearLayout days = Ui.hbox(a);
+            java.text.SimpleDateFormat dn = new java.text.SimpleDateFormat("EEE", java.util.Locale.forLanguageTag("tr"));
+            int hi = 0, lo = 0;
+            for (int i = 0; i < 7; i++) {
+                TextView dl = Ui.text(a, dn.format(new java.util.Date(todayStart - (6 - i) * 86400000L)), 11, Ui.TEXT3, Ui.MEDIUM);
+                dl.setGravity(Gravity.CENTER);
+                days.addView(dl, Ui.lpw(1));
+                if (eN[i] > 0 && energy[i] > energy[hi]) hi = i;
+                if (eN[i] > 0 && (eN[lo] == 0 || energy[i] < energy[lo])) lo = i;
+            }
+            ec.addView(days, Ui.margins(full(), a, 0, 4, 0, 0));
+            java.text.SimpleDateFormat fd = new java.text.SimpleDateFormat("EEEE", java.util.Locale.forLanguageTag("tr"));
+            TextView es = Ui.text(a, "En hareketli gün: " + fd.format(new java.util.Date(todayStart - (6 - hi) * 86400000L))
+                    + "  ·  en sakin: " + fd.format(new java.util.Date(todayStart - (6 - lo) * 86400000L)), 12.5f, Ui.TEXT2, Ui.MEDIUM);
+            es.setPadding(0, Ui.dp(a, 10), 0, 0);
+            ec.addView(es);
+            content.addView(ec, full());
+        }
+
+        // ---- Aylık özet ----
+        long monthStart = now - 30L * 86400000L;
+        int mSongs = 0;
+        long mMs = 0;
+        java.util.Set<String> mArtists = new java.util.HashSet<>();
+        for (Store.Play p : plays) {
+            if (p.ts < monthStart) continue;
+            mSongs++;
+            mMs += p.durMs;
+            String a0 = Text.mainArtist(p.artist);
+            if (!a0.isEmpty()) mArtists.add(a0);
+        }
+        if (mSongs >= 5) {
+            content.addView(Ui.section(a, "Son 30 gün"));
+            LinearLayout r3 = Ui.hbox(a);
+            r3.addView(stat("DİNLEME", formatDuration(mMs)), weightL());
+            r3.addView(stat("SANATÇI", mArtists.size() + " farklı"), weightR());
+            content.addView(r3, full());
+            TextView ms = Ui.secondaryButton(a, "📤  Aylık özetimi paylaş");
+            ms.setOnClickListener(x -> {
+                a.toast("Görsel hazırlanıyor…");
+                ShareCard.shareMonth(a, e.store);
+            });
+            content.addView(ms, Ui.margins(full(), a, 0, 12, 0, 0));
+        }
+
         if (plays.isEmpty()) {
             LinearLayout c = Ui.card(a);
             c.setGravity(Gravity.CENTER_HORIZONTAL);

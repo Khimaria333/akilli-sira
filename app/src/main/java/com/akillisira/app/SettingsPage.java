@@ -26,7 +26,18 @@ public class SettingsPage extends Page {
     private Ui.Segmented fadeSeg, langSeg, modeSeg;
     private TextView methodText, retrySilent;
     private TextView permNotif, permOverlay, permBattery;
-    private TextView logText;
+    private TextView logText, weatherRow;
+
+    private void refreshWeatherRow() {
+        if (weatherRow == null) return;
+        String place = Weather.placeName(a);
+        Weather.Now w = Weather.current();
+        weatherRow.setText(place == null ? "📍 Şehir seçilmedi"
+                : "📍 " + place + (w != null ? "  ·  " + w.label() : "") + (Weather.isOn(a) ? "" : "  ·  kapalı"));
+        if (place != null && w == null) Weather.refresh(a, false, () -> a.runOnUiThread(() -> {
+            if (Weather.current() != null) refreshWeatherRow();
+        }));
+    }
     private boolean logOpen;
 
     public SettingsPage(MainActivity a, Engine e) {
@@ -181,6 +192,52 @@ public class SettingsPage extends Page {
         body.addView(nb, full());
 
         // ---- Akıllı bağlam ----
+        // ---- Görünüm ----
+        body.addView(Ui.section(a, "Görünüm"));
+        LinearLayout th = Ui.card(a);
+        th.addView(Ui.text(a, "Zemin", 13, Ui.TEXT2, Ui.MEDIUM));
+        Ui.Segmented baseSeg = Ui.segmented(a, Ui.BASES, Ui.themeBase(a), i -> {
+            Ui.setTheme(a, i, Ui.themeAccent(a));
+            a.applyThemeNow();
+        });
+        th.addView(baseSeg.view, Ui.margins(full(), a, 0, 8, 0, 0));
+        th.addView(Ui.text(a, "Vurgu rengi", 13, Ui.TEXT2, Ui.MEDIUM), Ui.margins(full(), a, 0, 16, 0, 0));
+        LinearLayout accRow = Ui.hbox(a);
+        int curAcc = Ui.themeAccent(a);
+        for (int i = 0; i < Ui.ACCENT_NAMES.length; i++) {
+            final int idx = i;
+            LinearLayout chip = Ui.vbox(a);
+            chip.setGravity(Gravity.CENTER_HORIZONTAL);
+            chip.setClickable(true);
+            View dot = new View(a);
+            if (i < Ui.ACCENTS.length) dot.setBackground(Ui.gradient(a, Ui.ACCENTS[i][0], Ui.ACCENTS[i][1], 18));
+            else {
+                android.graphics.drawable.GradientDrawable sweep = new android.graphics.drawable.GradientDrawable(
+                        android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                        new int[]{0xFFFF4D6D, 0xFFFFC94D, 0xFF3DDC97, 0xFF22C1EE, 0xFF7B5CFF, 0xFFFF4D6D});
+                sweep.setGradientType(android.graphics.drawable.GradientDrawable.SWEEP_GRADIENT);
+                sweep.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                dot.setBackground(sweep);
+            }
+            FrameLayoutHolder.ring(a, chip, dot, idx == curAcc);
+            TextView n = Ui.text(a, Ui.ACCENT_NAMES[i], 11, idx == curAcc ? Ui.TEXT : Ui.TEXT2, idx == curAcc ? Ui.BOLD : Ui.MEDIUM);
+            n.setGravity(Gravity.CENTER);
+            n.setPadding(0, Ui.dp(a, 6), 0, 0);
+            chip.addView(n);
+            chip.setOnClickListener(v -> {
+                if (idx == Ui.themeAccent(a)) return;
+                Ui.setTheme(a, Ui.themeBase(a), idx);
+                a.applyThemeNow();
+            });
+            accRow.addView(chip, Ui.lpw(1));
+        }
+        th.addView(accRow, Ui.margins(full(), a, 0, 10, 0, 0));
+        TextView thHint = Ui.text(a, "Kapak rengi: uygulamayı her açtığında çalan şarkının rengini alır.",
+                12, Ui.TEXT3, Ui.REGULAR);
+        thHint.setPadding(0, Ui.dp(a, 10), 0, 0);
+        th.addView(thHint);
+        body.addView(th, full());
+
         body.addView(Ui.section(a, "Akıllı bağlam"));
         LinearLayout cb = Ui.card(a);
         swNight = switchRow(cb, "Gece otomatik sakinleş",
@@ -190,6 +247,48 @@ public class SettingsPage extends Page {
         swCar = switchRow(cb, "Arabaya bağlanınca Arabada modu",
                 "Bluetooth ile arabaya bağlanınca yol şarkılarına geçer, ayrılınca önceki moda döner",
                 e.isCarMode(), (b, on) -> e.setCarMode(on));
+        divider(cb);
+
+        // Hava durumu
+        switchRow(cb, "🌦  Havaya göre ruh hali",
+                "Ruh hali seçmediysen yağmurda daha sakin, güneşte daha neşeli şarkılara hafifçe kayar",
+                Weather.isOn(a), (b, on) -> {
+                    if (on && !Weather.hasPlace(a)) {
+                        b.setChecked(false);
+                        WeatherDialog.show(a, this::refreshWeatherRow);
+                        return;
+                    }
+                    Weather.setOn(a, on);
+                    e.refresh();
+                    refreshWeatherRow();
+                });
+        LinearLayout wr = Ui.hbox(a);
+        wr.setGravity(Gravity.CENTER_VERTICAL);
+        weatherRow = Ui.text(a, "", 13, Ui.TEXT2, Ui.MEDIUM);
+        wr.addView(weatherRow, Ui.lpw(1));
+        TextView wchg = Ui.text(a, "Şehri değiştir", 13, Ui.ACCENT, Ui.BOLD);
+        wchg.setPadding(Ui.dp(a, 8), Ui.dp(a, 6), 0, Ui.dp(a, 6));
+        wchg.setOnClickListener(v -> WeatherDialog.show(a, this::refreshWeatherRow));
+        wr.addView(wchg);
+        cb.addView(wr, Ui.margins(full(), a, 0, 2, 0, 0));
+        refreshWeatherRow();
+        divider(cb);
+
+        // Kulaklık
+        cb.addView(Ui.text(a, "🎧  Kulaklık takınca", 15, Ui.TEXT, Ui.BOLD));
+        TextView hpd = Ui.text(a, "Müzik çalmıyorken kulaklık bağlanırsa saate, rutine ve havaya uygun liste başlat",
+                13, Ui.TEXT2, Ui.REGULAR);
+        hpd.setPadding(0, Ui.dp(a, 3), 0, Ui.dp(a, 10));
+        hpd.setLineSpacing(0, 1.12f);
+        cb.addView(hpd);
+        Ui.Segmented hpSeg = Ui.segmented(a, new String[]{"Kapalı", "Bildirimle sor", "Hemen başlat"}, e.getHpMode(), e::setHpMode);
+        cb.addView(hpSeg.view, full());
+        divider(cb);
+
+        // Yeni çıkanlar
+        switchRow(cb, "🆕  Yeni çıkan bildirimi",
+                "Beğendiğin sanatçılar yeni şarkı ya da albüm çıkarınca günde en fazla bir kez haber ver",
+                NewReleases.isOn(a), (b, on) -> NewReleases.setOn(a, on));
         divider(cb);
         cb.addView(Ui.text(a, "Uyku zamanlayıcı", 15, Ui.TEXT, Ui.BOLD));
         TextView sd = Ui.text(a, "Şimdi Çalıyor ekranındaki 😴 düğmesinden kur. Süre dolunca çalan şarkı biter, "
@@ -448,6 +547,23 @@ public class SettingsPage extends Page {
         logText.setTextIsSelectable(true);
         logText.setVisibility(View.GONE);
         body.addView(logText, Ui.margins(full(), a, 0, 10, 0, 0));
+    }
+
+    /** Vurgu rengi seçimi: renkli daire, seçiliyse çevresinde halka. */
+    private static final class FrameLayoutHolder {
+        static void ring(MainActivity a, LinearLayout parent, View dot, boolean selected) {
+            android.widget.FrameLayout f = new android.widget.FrameLayout(a);
+            int s = Ui.dp(a, 44);
+            if (selected) {
+                android.graphics.drawable.GradientDrawable r = new android.graphics.drawable.GradientDrawable();
+                r.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                r.setStroke(Ui.dp(a, 2), Ui.TEXT);
+                f.setBackground(r);
+            }
+            android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(Ui.dp(a, 34), Ui.dp(a, 34), Gravity.CENTER);
+            f.addView(dot, lp);
+            parent.addView(f, Ui.lp(s, s));
+        }
     }
 
     private Switch switchRow(LinearLayout parent, String title, String desc, boolean on,

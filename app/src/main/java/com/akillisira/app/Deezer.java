@@ -114,6 +114,65 @@ public class Deezer {
         return parseTracks(get("/playlist/" + playlistId + "/tracks?limit=" + limit), source);
     }
 
+    // ---------- Albümler (yeni çıkanlar) ve tek şarkı (Blend) ----------
+
+    public static final class Album {
+        public long id, artistId;
+        public String title, cover, coverBig, type, date, artist;
+    }
+
+    /** Sanatçının albüm/single'ları (en yeni önce). */
+    public List<Album> artistAlbums(long artistId, String artistName, int limit) throws IOException {
+        JSONObject r = get("/artist/" + artistId + "/albums?limit=" + limit);
+        List<Album> out = new ArrayList<>();
+        JSONArray data = r.optJSONArray("data");
+        if (data == null) return out;
+        for (int i = 0; i < data.length(); i++) {
+            JSONObject o = data.optJSONObject(i);
+            if (o == null) continue;
+            Album a = new Album();
+            a.id = o.optLong("id");
+            a.title = o.optString("title");
+            a.cover = emptyToNull(o.optString("cover_medium"));
+            a.coverBig = emptyToNull(o.optString("cover_xl"));
+            a.type = o.optString("record_type", "album");
+            a.date = o.optString("release_date", "");
+            a.artistId = artistId;
+            a.artist = artistName;
+            if (a.id > 0) out.add(a);
+        }
+        out.sort((x, y) -> y.date.compareTo(x.date));
+        return out;
+    }
+
+    public List<Track> albumTracks(Album al, int limit, String source) throws IOException {
+        List<Track> out = parseTracks(get("/album/" + al.id + "/tracks?limit=" + limit), source);
+        for (Track t : out) {
+            t.albumId = al.id;
+            if (t.coverUrl == null) t.coverUrl = al.cover;
+            if (t.coverBigUrl == null) t.coverBigUrl = al.coverBig;
+            if (t.artist == null || t.artist.isEmpty()) { t.artist = al.artist; t.artistId = al.artistId; }
+            if (al.date.length() >= 4) {
+                try { t.year = Integer.parseInt(al.date.substring(0, 4)); } catch (Exception ignored) {}
+            }
+        }
+        return out;
+    }
+
+    /** Kimliğiyle tek şarkı (bulunamazsa null). */
+    public Track track(long id, String source) throws IOException {
+        JSONObject o = get("/track/" + id);
+        if (o.optLong("id") <= 0) return null;
+        JSONObject wrap = new JSONObject();
+        try {
+            wrap.put("data", new JSONArray().put(o));
+        } catch (org.json.JSONException e) {
+            return null;
+        }
+        List<Track> l = parseTracks(wrap, source);
+        return l.isEmpty() ? null : l.get(0);
+    }
+
     // ---------- BPM / enerji ----------
 
     /** /track/{id} çağrısıyla BPM ve ses yüksekliğini doldurur (önbellekli). */

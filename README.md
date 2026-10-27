@@ -12,7 +12,12 @@ sıradaki şarkıyı seçer ve şarkı bitince sesi yumuşakça kısıp ona geç
 - **Keşfet:** Ruh halini cümleyle anlat ("sporda sert rap", "akşamüstü sahilde sakin bir şeyler"), ruh hali ya da tür seç, ya da ara.
 - **Öğrenir ama sen söyleyince:** ❤️ beğeniler tarz profilini oluşturur; 👎 ve "Kötü geçiş" bir daha gelmez. Hızlı geçmelerden bir şey çıkarmaz.
 - **Her yerden kontrol:** Kilit ekranı bildirimi, widget, hızlı ayarlar kutucuğu, kısayollar, uyku zamanlayıcı, araba modu, müzikle uyandıran alarm, otomatik ruh hali planı.
-- **Geçmiş ve paylaşım:** İstatistikler, haftalık paylaşım kartı, liste paylaşımı.
+- **Koşu modu:** Adım temponu ölçer, adımlarına uyan BPM'de şarkı seçer.
+- **Bağlam:** Hava durumuna göre ruh hali, kulaklık takınca uygun liste, arabada yol modu.
+- **Hazır listeler:** Günün karışımı, yeni çıkanlar (bildirimli), favoriler, tarzına göre, Ahenk Blend (arkadaşınla ortak liste).
+- **YouTube Music'e aktar:** Keşfet listesini YouTube Music'te sıralı liste olarak aç.
+- **Geçmiş ve paylaşım:** Dinleme haritası, haftalık enerji, haftalık ve aylık paylaşım kartları.
+- **Görünüm:** Koyu ya da AMOLED siyah, beş vurgu rengi (kapak rengi dahil); dört boyutlu widget.
 - **Uygulama içi güncelleme:** Yeni sürüm çıkınca tek dokunuşla kurulur.
 
 ## Kurulum

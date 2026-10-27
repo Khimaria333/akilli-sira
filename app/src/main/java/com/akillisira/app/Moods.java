@@ -50,6 +50,22 @@ public final class Moods {
         public final List<String> styleQueries = new ArrayList<>();
 
         public boolean hasStyle() { return !style.isEmpty(); }
+
+        /** Koşu modu: tempo diğer her şeyden önemli, çalan şarkının temposu değil hedef aralık esas. */
+        public double tempoWeight = 1;
+        public boolean tempoStrict;
+        /** Hava durumu gibi hafif hedefler: tempoya karışmaz, ruh hali etkisi azaltılmış. */
+        public boolean noTempo;
+        public double moodWeight = 1;
+
+        /** Başka bir hedefin türünü bu hedefe taşır ("rap ile koşu"). */
+        public void copyStyleFrom(Target o) {
+            if (o == null || !o.hasStyle()) return;
+            style.addAll(o.style);
+            styleDeezer.addAll(o.styleDeezer);
+            styleQueries.addAll(o.styleQueries);
+            styleLabel = o.styleLabel;
+        }
     }
 
     private static String[] a(String... s) { return s; }

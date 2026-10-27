@@ -63,7 +63,7 @@ public final class ShareCard {
                     Intent i = new Intent(Intent.ACTION_SEND);
                     i.setType("image/png");
                     i.putExtra(Intent.EXTRA_STREAM, uri);
-                    i.putExtra(Intent.EXTRA_TEXT, "Bu haftaki müziğim 🎧 #AkıllıSıra");
+                    i.putExtra(Intent.EXTRA_TEXT, "Bu haftaki müziğim 🎧 #Ahenk");
                     i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     a.startActivity(Intent.createChooser(i, "Haftanı paylaş"));
                 });
@@ -72,6 +72,161 @@ public final class ShareCard {
                         android.widget.Toast.LENGTH_LONG).show());
             }
         }).start();
+    }
+
+    // =====================================================================
+    // Aylık özet
+    // =====================================================================
+
+    public static void shareMonth(Activity a, Store store) {
+        loadLogo(a);
+        new Thread(() -> {
+            try {
+                Bitmap bmp = renderMonth(store);
+                Uri uri = save(a.getContentResolver(), bmp);
+                a.runOnUiThread(() -> {
+                    Intent i = new Intent(Intent.ACTION_SEND);
+                    i.setType("image/png");
+                    i.putExtra(Intent.EXTRA_STREAM, uri);
+                    i.putExtra(Intent.EXTRA_TEXT, "Bu ayki müziğim 🎧 #Ahenk");
+                    i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    a.startActivity(Intent.createChooser(i, "Ayını paylaş"));
+                });
+            } catch (Exception e) {
+                a.runOnUiThread(() -> android.widget.Toast.makeText(a, "Görsel oluşturulamadı: " + e.getMessage(),
+                        android.widget.Toast.LENGTH_LONG).show());
+            }
+        }).start();
+    }
+
+    static Bitmap renderMonth(Store store) {
+        long now = System.currentTimeMillis();
+        long since = now - 30L * 86400000L;
+        int songs = 0, bpmN = 0;
+        long ms = 0;
+        double bpmSum = 0;
+        Map<String, Integer> artists = new HashMap<>(), moods = new HashMap<>(), tracks = new HashMap<>();
+        List<Store.Play> plays = store.plays();
+        for (Store.Play p : plays) {
+            if (p.ts < since) continue;
+            songs++;
+            ms += p.durMs;
+            if (p.bpm > 1) { bpmSum += p.bpm; bpmN++; }
+            String ar = Text.mainArtist(p.artist);
+            if (!ar.isEmpty()) artists.put(ar, artists.getOrDefault(ar, 0) + 1);
+            String tk = p.title + "\t" + ar;
+            tracks.put(tk, tracks.getOrDefault(tk, 0) + 1);
+            if (p.mood != null && !p.mood.isEmpty()) moods.put(p.mood, moods.getOrDefault(p.mood, 0) + 1);
+        }
+        List<Map.Entry<String, Integer>> topArtists = sortDesc(artists), topMoods = sortDesc(moods), topTracks = sortDesc(tracks);
+        int[][] heat = Views.HeatMap.compute(plays, 30);
+        String peak = Views.HeatMap.peak(heat);
+
+        Bitmap bmp = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setShader(new LinearGradient(0, 0, 0, H, 0xFF0F0A24, 0xFF0B0B10, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, W, H, p);
+        glow(c, p, 160, 240, 640, 0x777B5CFF);
+        glow(c, p, 950, 900, 620, 0x66FF4D6D);
+        glow(c, p, 200, 1700, 560, 0x552BD9FF);
+        p.setShader(null);
+
+        float x = 96;
+        Paint t = new Paint(Paint.ANTI_ALIAS_FLAG);
+        t.setColor(0xFFFF4D6D);
+        t.setTypeface(Ui.BOLD);
+        t.setTextSize(34);
+        t.setLetterSpacing(0.25f);
+        brand(c, t, "AHENK · AYLIK ÖZET", x, 190);
+        t.setLetterSpacing(0);
+        t.setColor(0xFFFFFFFF);
+        t.setTypeface(Ui.BLACK);
+        t.setTextSize(150);
+        String month = new SimpleDateFormat("MMMM", Locale.forLanguageTag("tr")).format(new Date(now));
+        c.drawText(month.substring(0, 1).toUpperCase(Locale.forLanguageTag("tr")) + month.substring(1), x, 350, t);
+        SimpleDateFormat df = new SimpleDateFormat("d MMMM", Locale.forLanguageTag("tr"));
+        t.setTypeface(Ui.MEDIUM);
+        t.setTextSize(40);
+        t.setColor(0xFFA3A3B5);
+        c.drawText("son 30 gün  ·  " + df.format(new Date(since)) + " – " + df.format(new Date(now)), x, 420, t);
+
+        long min = ms / 60000;
+        String big = min >= 60 ? (min / 60) + " saat" : min + " dk";
+        Paint g = new Paint(Paint.ANTI_ALIAS_FLAG);
+        g.setTypeface(Ui.BLACK);
+        g.setTextSize(170);
+        g.setShader(new LinearGradient(x, 0, x + 820, 0, 0xFFFF4D6D, 0xFF2BD9FF, Shader.TileMode.CLAMP));
+        c.drawText(fit(big, g, W - 2 * x), x, 610, g);
+        t.setTextSize(44);
+        t.setColor(0xFFF4F4F8);
+        c.drawText(songs + " şarkı  ·  " + artists.size() + " sanatçı", x, 690, t);
+
+        float y = 800;
+        label(c, "AYIN SANATÇISI", x, y);
+        t.setTypeface(Ui.BLACK);
+        t.setTextSize(88);
+        t.setColor(0xFFFFFFFF);
+        c.drawText(fit(topArtists.isEmpty() ? "—" : topArtists.get(0).getKey(), t, W - 2 * x), x, y + 100, t);
+        y += 175;
+        t.setTextSize(42);
+        for (int i = 1; i < topArtists.size() && i < 4; i++) {
+            Map.Entry<String, Integer> en = topArtists.get(i);
+            t.setTypeface(Ui.BOLD);
+            t.setColor(0xFFFF4D6D);
+            c.drawText((i + 1) + ".", x, y, t);
+            t.setColor(0xFFF4F4F8);
+            t.setTypeface(Ui.MEDIUM);
+            c.drawText(fit(en.getKey(), t, W - 2 * x - 260), x + 70, y, t);
+            t.setColor(0xFFA3A3B5);
+            String cnt = en.getValue() + " kez";
+            c.drawText(cnt, W - x - t.measureText(cnt), y, t);
+            y += 64;
+        }
+
+        y += 40;
+        label(c, "AYIN ŞARKISI", x, y);
+        t.setTypeface(Ui.BOLD);
+        t.setTextSize(52);
+        t.setColor(0xFFFFFFFF);
+        String song = topTracks.isEmpty() ? "—" : topTracks.get(0).getKey().split("\t")[0];
+        c.drawText(fit(song, t, W - 2 * x), x, y + 72, t);
+        t.setTypeface(Ui.MEDIUM);
+        t.setTextSize(38);
+        t.setColor(0xFFA3A3B5);
+        String songArtist = topTracks.isEmpty() ? "" : topTracks.get(0).getKey().split("\t").length > 1
+                ? topTracks.get(0).getKey().split("\t")[1] + "  ·  " + topTracks.get(0).getValue() + " kez" : "";
+        c.drawText(fit(songArtist, t, W - 2 * x), x, y + 124, t);
+
+        // Mini dinleme haritası
+        y += 190;
+        label(c, "NE ZAMAN DİNLEDİM" + (peak != null ? "  ·  EN ÇOK " + peak.toUpperCase(Locale.forLanguageTag("tr")) : ""), x, y);
+        y += 30;
+        int mx = 1;
+        for (int[] r : heat) for (int v : r) mx = Math.max(mx, v);
+        float gw = W - 2 * x, cw = (gw - 11 * 8) / 12f, chh = 30;
+        Paint cell = new Paint(Paint.ANTI_ALIAS_FLAG);
+        for (int i = 0; i < 7; i++) {
+            for (int j = 0; j < 12; j++) {
+                int v = heat[i][j];
+                cell.setColor(v == 0 ? 0x1FFFFFFF : Palette.mix(0xFF4A3A8A, 0xFFFF4D6D, (float) Math.sqrt(v / (double) mx)));
+                float cx = x + j * (cw + 8), cy = y + i * (chh + 8);
+                c.drawRoundRect(new RectF(cx, cy, cx + cw, cy + chh), 8, 8, cell);
+            }
+        }
+        y += 7 * (chh + 8) + 60;
+        t.setTypeface(Ui.MEDIUM);
+        t.setTextSize(38);
+        t.setColor(0xFFF4F4F8);
+        String line = (bpmN > 0 ? "Ort. " + Math.round(bpmSum / bpmN) + " BPM" : "")
+                + (!topMoods.isEmpty() ? (bpmN > 0 ? "  ·  " : "") + "en çok " + topMoods.get(0).getKey().replace("  ·  ", " · ") : "");
+        if (y < H - 140) c.drawText(fit(line, t, W - 2 * x), x, y, t);
+
+        t.setTextSize(34);
+        t.setColor(0xFF6E6E82);
+        String foot = "Ahenk ile seçildi ✨";
+        c.drawText(foot, (W - t.measureText(foot)) / 2f, H - 90, t);
+        return bmp;
     }
 
     // =====================================================================
