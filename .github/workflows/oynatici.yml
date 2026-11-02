@@ -1,0 +1,82 @@
+name: Ahenk Oynatıcı (Cloudflare)
+
+# Mevcut "ahenk" Worker'ından ayrı: "ahenk-oynatici" adıyla, kendi veritabanıyla yayınlanır.
+on:
+  push:
+    branches: [oynatici]
+    paths: ['oynatici/**', 'cloud/src/**', '.github/workflows/oynatici.yml']
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: oynatici
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      LASTFM_KEY: ${{ secrets.LASTFM_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Sınamalar
+        working-directory: .
+        run: node --experimental-sqlite --no-warnings oynatici/test/api.test.mjs
+
+      - name: Cloudflare anahtarları var mı?
+        id: check
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::CLOUDFLARE_API_TOKEN ve CLOUDFLARE_ACCOUNT_ID eklenmemiş; yayın atlandı."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -z "$YOUTUBE_API_KEY" ]; then
+            echo "::warning title=YouTube anahtarı::YOUTUBE_API_KEY eklenmemiş. Oynatıcı açılır ama şarkı çalamaz."
+          fi
+
+      - name: Wrangler
+        if: steps.check.outputs.skip != '1'
+        run: npm install --no-save --no-audit --no-fund wrangler@4
+
+      - name: Veritabanı (D1)
+        if: steps.check.outputs.skip != '1'
+        shell: bash
+        run: |
+          set +e
+          if ! [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]; then unset CLOUDFLARE_ACCOUNT_ID; fi
+          fail() { echo "::error title=$1::$(echo "$2" | tr '\n' ' ' | sed 's/%/%25/g' | cut -c1-900)"; exit 1; }
+          npx wrangler d1 list --json > list.json 2> list.err
+          [ $? -eq 0 ] || fail "D1 listesi" "$(cat list.err) $(cat list.json)"
+          ID=$(jq -r '.[] | select(.name=="ahenk-oynatici") | .uuid' list.json 2>/dev/null | head -1)
+          if [ -z "$ID" ]; then
+            npx wrangler d1 create ahenk-oynatici > create.log 2>&1 || fail "D1 oluşturma" "$(cat create.log)"
+            npx wrangler d1 list --json > list.json 2> list.err
+            ID=$(jq -r '.[] | select(.name=="ahenk-oynatici") | .uuid' list.json 2>/dev/null | head -1)
+          fi
+          [ -n "$ID" ] || fail "D1 kimliği" "$(cat list.json list.err create.log 2>/dev/null)"
+          sed -i "s/__D1_ID__/$ID/" wrangler.toml
+          npx wrangler d1 execute ahenk-oynatici --remote --file=schema.sql > exec.log 2>&1 || fail "Şema" "$(cat exec.log)"
+
+      - name: Yayınla
+        if: steps.check.outputs.skip != '1'
+        shell: bash
+        run: |
+          set +e
+          if ! [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]; then unset CLOUDFLARE_ACCOUNT_ID; fi
+          npx wrangler deploy > deploy.log 2>&1
+          RC=$?
+          cat deploy.log
+          if [ $RC -ne 0 ]; then echo "::error title=Yayın::$(tr '\n' ' ' < deploy.log | cut -c1-900)"; exit 1; fi
+          URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          if [ -n "$YOUTUBE_API_KEY" ]; then echo "$YOUTUBE_API_KEY" | npx wrangler secret put YOUTUBE_API_KEY; fi
+          if [ -n "$LASTFM_KEY" ]; then echo "$LASTFM_KEY" | npx wrangler secret put LASTFM_KEY; fi
+          echo "## Ahenk Oynatıcı yayında" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Adres: $URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Oynatıcı adresi::$URL"

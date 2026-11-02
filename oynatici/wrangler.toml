@@ -1,0 +1,13 @@
+# Ahenk Oynatıcı: mevcut "ahenk" Worker'ından ve veritabanından tamamen ayrı.
+name = "ahenk-oynatici"
+main = "src/worker.js"
+compatibility_date = "2025-06-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ahenk-oynatici"
+database_id = "__D1_ID__"
